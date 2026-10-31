@@ -53,7 +53,7 @@ config, logger, chain ids, error shape
 - [x] `GET /health/live` returns 200 through Fastify inject with no database
 
 ### Phase 2: Matching and response compatibility
-- [ ] Task 5: Pure scorer and normalization
+- [x] Task 5: Pure scorer and normalization
 - [ ] Task 6: ProductResult field mapping
 
 ### Checkpoint: Compatibility

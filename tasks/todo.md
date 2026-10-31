@@ -118,15 +118,15 @@ Definition of done for every task: acceptance criteria below, plus tests that fa
 **Description:** Port `normalizeQuery`, `tokenize`, and `scoreMatch` verbatim from the adopted Neuton source, including `Math.round` and the Hebrew punctuation replacements. Export the strict threshold.
 
 **Acceptance criteria:**
-- [ ] Exact barcode scores 10000 and exact name scores 9500
-- [ ] Score 2500 is rejected and 2501 would be accepted; zero name-token overlap scores 0
-- [ ] Golden fixtures cover Hebrew names, geresh/gershayim, decimal numbers, manufacturer overlap, and the length penalty
-- [ ] Token vectors for the shared catalog fixtures are stored under `contracts/fixtures/`
+- [x] Exact barcode scores 10000 and exact name scores 9500
+- [x] Score 2500 is rejected and 2501 would be accepted; zero name-token overlap scores 0
+- [x] Golden fixtures cover Hebrew names, geresh/gershayim, decimal numbers, manufacturer overlap, and the length penalty
+- [x] Token vectors for the shared catalog fixtures are stored under `contracts/fixtures/`
 
 **Verification:**
-- [ ] Tests pass: `npm test --prefix services/api`
-- [ ] Build succeeds: `npm run build --prefix services/api`
-- [ ] Manual check: one golden expected value is recomputed from the written formula, not copied from the function output blindly
+- [x] Tests pass: `npm test --prefix services/api`
+- [x] Build succeeds: `npm run build --prefix services/api`
+- [x] Manual check: one golden expected value is recomputed from the written formula, not copied from the function output blindly
 
 **Dependencies:** Task 1
 

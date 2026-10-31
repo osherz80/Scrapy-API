@@ -1,0 +1,12 @@
+{
+  "source": "Neuton-Back/src/lib/supermarket/prices.ts",
+  "adoptedOn": "2026-10-31",
+  "vectors": [
+    { "text": "  Milk ", "normalized": "milk", "tokens": ["milk"] },
+    { "text": "מ\"ל", "normalized": "מ\"ל", "tokens": ["מל"] },
+    { "text": "1.5 ק\"ג", "normalized": "1.5 ק\"ג", "tokens": ["1.5", "קג"] },
+    { "text": "a.b", "normalized": "a.b", "tokens": ["a", "b"] },
+    { "text": "10.", "normalized": "10.", "tokens": ["10"] },
+    { "text": "רוטב טבסקו 60 מ\"ל", "normalized": "רוטב טבסקו 60 מ\"ל", "tokens": ["רוטב", "טבסקו", "60", "מל"] }
+  ]
+}
