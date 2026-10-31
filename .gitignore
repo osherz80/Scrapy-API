@@ -1,3 +1,6 @@
+# Local temporary files
+Temp/
+
 # Logs
 logs
 *.log
