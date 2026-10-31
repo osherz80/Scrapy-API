@@ -424,3 +424,34 @@ Definition of done for every task: acceptance criteria below, plus tests that fa
 - [x] Typecheck, lint, unit tests, and local integration tests pass
 - [x] Warm single-search and batch timings are measured and written down, or the budget miss is reported
 - [ ] Ready for human review
+
+
+## Integration follow-up: align with the implemented scraper (2026-10-31)
+
+Status: open; required before claiming end-to-end manual refresh readiness.
+The API already owns the manual refresh trigger (`POST /v1/refreshes`); no
+separate scraper admission CLI is required for the normal API-driven flow.
+
+- [ ] Update all runtime SQL, database fixtures and schema documentation from
+  `supermarket.*` to `public.*`. Scraper migration 002 already moved all seven
+  tables, the validation function and migration history into public and removed
+  the supermarket schema. Keep existing role names (supermarket_control/search/
+  ingestor); they are permission groups, not schemas.
+- [ ] Update `src/refresh/dispatch.ts`: send workflow inputs
+  `{ mode: "refresh", run_id: runId }`, not `{ runId }`. Target the scraper's
+  `.github/workflows/refresh.yml` and configured Git ref. Verify acknowledged,
+  uncertain and definitely rejected delivery behavior against this exact payload.
+- [ ] Align admission/recovery locking with the scraper's ordered chain advisory
+  locks and run-first recovery locks. Preserve the previous published catalog's
+  current_run_id during admission, dispatch rejection and abandoned-run recovery;
+  change publication pointers only after successful atomic publication.
+- [ ] Run real PostgreSQL integration tests against the scraper's actual 001/002
+  migrations, including active-run conflicts, dispatch failure/uncertainty,
+  recovery and preservation of the previously published catalog.
+- [ ] Run one controlled API admission → GitHub workflow → scraper publication →
+  API status/search smoke test. GitHub's manual UI requires the workflow to exist
+  on the default branch first. No API/worker deployment is implied by this note.
+
+References: Scrapy `db/migrations/002_public_schema.sql`,
+`.github/workflows/refresh.yml`, `repository/admission.py`,
+`repository/recovery.py`, and `repository/publication.py`.
