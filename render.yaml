@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: supermarket-api
+    runtime: node
+    plan: free
+    buildCommand: npm ci --prefix services/api && npm run build --prefix services/api
+    startCommand: npm start --prefix services/api
+    healthCheckPath: /health/live
+    envVars:
+      - key: NODE_VERSION
+        value: "24.14.0"
+      - key: PORT
+        value: "3000"
+      - key: LOG_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: GITHUB_REPOSITORY
+        sync: false
+      - key: GITHUB_WORKFLOW_ID
+        sync: false
+      - key: GITHUB_REF
+        sync: false
+      - key: GITHUB_TOKEN
+        sync: false

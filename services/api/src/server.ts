@@ -2,8 +2,11 @@ import { pathToFileURL } from 'node:url';
 
 import { buildApp } from './app.ts';
 import { loadConfig } from './config.ts';
+import { PgCatalog } from './db/catalog.ts';
+import { createPool } from './db/pool.ts';
 import { createLoggerFactory } from './logger/factory.ts';
 import { createConsoleTransport } from './logger/transports/console.ts';
+import { PgRefreshStore } from './refresh/store.ts';
 
 export async function start(env: NodeJS.ProcessEnv = process.env): Promise<void> {
   const config = loadConfig(env);
@@ -14,12 +17,28 @@ export async function start(env: NodeJS.ProcessEnv = process.env): Promise<void>
     transports: [createConsoleTransport()],
   });
   const logger = factory.create();
-  const app = buildApp({ config, logger });
+  const pool = createPool(config.databaseUrl, config.dbQueryTimeoutMs);
+  const app = buildApp({
+    config,
+    logger,
+    readyCheck: async () => {
+      const client = await pool.connect();
+      try {
+        await client.query('SELECT 1');
+        return true;
+      } finally {
+        client.release();
+      }
+    },
+    catalog: new PgCatalog(pool, logger),
+    refresh: { store: new PgRefreshStore(pool) },
+  });
   let closing = false;
   const shutdown = async (): Promise<void> => {
     if (closing) return;
     closing = true;
     await app.close();
+    await pool.end();
     await factory.shutdown();
   };
   process.once('SIGTERM', () => {

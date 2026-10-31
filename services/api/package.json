@@ -10,9 +10,11 @@
     "dev": "node --watch --experimental-strip-types src/server.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint": "eslint .",
-    "test": "node --test --experimental-strip-types \"test/unit/**/*.test.ts\"",
+    "test": "node --test --experimental-strip-types \"test/unit/**/*.test.ts\" \"test/contract/**/*.test.ts\"",
+    "test:integration": "node --test --test-concurrency=1 --experimental-strip-types \"test/integration/**/*.test.ts\"",
     "build": "tsc -p tsconfig.build.json",
-    "start": "node dist/server.js"
+    "start": "node dist/server.js",
+    "db:migrate": "node --experimental-strip-types src/db/migrate-cli.ts"
   },
   "dependencies": {
     "fastify": "5.12.7",

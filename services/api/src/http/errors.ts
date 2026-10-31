@@ -2,6 +2,7 @@ export const BODY_LIMIT_BYTES = 64 * 1024;
 
 export interface FieldDetail {
   path: string;
+  runId?: string;
 }
 
 export interface ErrorResponseBody {

@@ -7,10 +7,7 @@ export interface AppConfig {
   logEnv: string;
   appVersion: string;
   staleAfterHours: number;
-  searchApiKey: string;
-  adminApiKey: string;
-  databaseReadUrl: string;
-  databaseControlUrl: string;
+  databaseUrl: string;
   githubRepository: string;
   githubWorkflowId: string;
   githubRef: string;
@@ -39,11 +36,9 @@ export class ConfigError extends Error {
   }
 }
 
-const REQUIRED = [
-  'DATABASE_READ_URL',
-  'DATABASE_CONTROL_URL',
-  'SEARCH_API_KEY',
-  'ADMIN_API_KEY',
+const REQUIRED = ['DATABASE_URL'] as const;
+
+const GITHUB_SETTINGS = [
   'GITHUB_REPOSITORY',
   'GITHUB_WORKFLOW_ID',
   'GITHUB_REF',
@@ -61,6 +56,17 @@ const LEVEL_ORDER: Record<LogLevel, number> = {
 
 type Env = Readonly<Record<string, string | undefined>>;
 
+export function requireDatabaseUrl(env: Env): string {
+  const missing: string[] = [];
+  const invalid: string[] = [];
+  if (!present(env.DATABASE_URL)) missing.push('DATABASE_URL');
+  const databaseUrl = readDatabaseUrl(env.DATABASE_URL, 'DATABASE_URL', invalid);
+  if (missing.length > 0 || invalid.length > 0 || databaseUrl === undefined) {
+    throw new ConfigError(missing, invalid);
+  }
+  return databaseUrl;
+}
+
 export function loadConfig(env: Env): AppConfig {
   const missing: string[] = [];
   const invalid: string[] = [];
@@ -75,17 +81,8 @@ export function loadConfig(env: Env): AppConfig {
   const logLevel =
     production && LEVEL_ORDER[requestedLevel] < LEVEL_ORDER.info ? 'info' : requestedLevel;
 
-  const databaseReadUrl = readDatabaseUrl(env.DATABASE_READ_URL, 'DATABASE_READ_URL', invalid);
-  const databaseControlUrl = readDatabaseUrl(
-    env.DATABASE_CONTROL_URL,
-    'DATABASE_CONTROL_URL',
-    invalid,
-  );
-  const searchApiKey = readSecret(env.SEARCH_API_KEY, 'SEARCH_API_KEY', 32, invalid);
-  const adminApiKey = readSecret(env.ADMIN_API_KEY, 'ADMIN_API_KEY', 32, invalid);
-  if (searchApiKey !== undefined && adminApiKey !== undefined && searchApiKey === adminApiKey) {
-    invalid.push('ADMIN_API_KEY');
-  }
+  const databaseUrl = readDatabaseUrl(env.DATABASE_URL, 'DATABASE_URL', invalid);
+  const github = readGithubSettings(env, missing, invalid);
 
   const config: AppConfig = {
     port: readInt(env, 'PORT', 3000, 1, 65535, invalid),
@@ -94,25 +91,11 @@ export function loadConfig(env: Env): AppConfig {
     logEnv,
     appVersion: optional(env, 'APP_VERSION', 'dev', invalid),
     staleAfterHours: readNumber(env, 'STALE_AFTER_HOURS', 48, 1, 24 * 14, invalid),
-    searchApiKey: searchApiKey ?? '',
-    adminApiKey: adminApiKey ?? '',
-    databaseReadUrl: databaseReadUrl ?? '',
-    databaseControlUrl: databaseControlUrl ?? '',
-    githubRepository: readPattern(
-      env.GITHUB_REPOSITORY,
-      'GITHUB_REPOSITORY',
-      /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/,
-      invalid,
-    ),
-    githubWorkflowId: readBounded(
-      env.GITHUB_WORKFLOW_ID,
-      'GITHUB_WORKFLOW_ID',
-      128,
-      /^[A-Za-z0-9_./-]+$/,
-      invalid,
-    ),
-    githubRef: readBounded(env.GITHUB_REF, 'GITHUB_REF', 256, /^[^\s]+$/, invalid),
-    githubToken: readSecret(env.GITHUB_TOKEN, 'GITHUB_TOKEN', 20, invalid) ?? '',
+    databaseUrl: databaseUrl ?? '',
+    githubRepository: github.repository,
+    githubWorkflowId: github.workflowId,
+    githubRef: github.ref,
+    githubToken: github.token,
     dbQueryTimeoutMs: readInt(env, 'DB_QUERY_TIMEOUT_MS', 15_000, 1, 120_000, invalid),
     requestTimeoutMs: readInt(env, 'REQUEST_TIMEOUT_MS', 30_000, 1, 120_000, invalid),
     searchRateLimitPerMinute: readInt(env, 'SEARCH_RATE_LIMIT_PER_MINUTE', 60, 1, 10_000, invalid),
@@ -128,6 +111,31 @@ export function loadConfig(env: Env): AppConfig {
 
 function present(value: string | undefined): value is string {
   return value !== undefined && value.trim() !== '';
+}
+
+function readGithubSettings(env: Env, missing: string[], invalid: string[]) {
+  const anySet = GITHUB_SETTINGS.some((name) => present(env[name]));
+  if (!anySet) return { repository: '', workflowId: '', ref: '', token: '' };
+  for (const name of GITHUB_SETTINGS) {
+    if (!present(env[name])) missing.push(name);
+  }
+  return {
+    repository: readPattern(
+      env.GITHUB_REPOSITORY,
+      'GITHUB_REPOSITORY',
+      /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/,
+      invalid,
+    ),
+    workflowId: readBounded(
+      env.GITHUB_WORKFLOW_ID,
+      'GITHUB_WORKFLOW_ID',
+      128,
+      /^[A-Za-z0-9_./-]+$/,
+      invalid,
+    ),
+    ref: readBounded(env.GITHUB_REF, 'GITHUB_REF', 256, /^[^\s]+$/, invalid),
+    token: readSecret(env.GITHUB_TOKEN, 'GITHUB_TOKEN', 20, invalid) ?? '',
+  };
 }
 
 function optional(env: Env, name: string, fallback: string, invalid: string[]): string {

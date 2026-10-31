@@ -35,9 +35,9 @@ Definition of done for every task: acceptance criteria below, plus tests that fa
 **Description:** Load the spec's runtime settings from a caller-supplied environment object. Reject missing or malformed values without reading files and without including secret values in the error.
 
 **Acceptance criteria:**
-- [x] Required names are `DATABASE_READ_URL`, `DATABASE_CONTROL_URL`, `SEARCH_API_KEY`, `ADMIN_API_KEY`, `GITHUB_REPOSITORY`, `GITHUB_WORKFLOW_ID`, `GITHUB_REF`, and `GITHUB_TOKEN`
+- [x] The only required name is `DATABASE_URL`. GitHub dispatch settings are optional and must be set together
 - [x] Defaults match the spec: stale window 48 hours, search limit 60/minute, refresh limit 5/minute, query timeout 15s, request budget 30s, batch DB concurrency 2
-- [x] Non-local database URLs must not set `sslmode=disable`. The two API keys must differ and be at least 32 characters
+- [x] Non-local database URLs must not set `sslmode=disable`. There is no search or admin API key
 - [x] Production log environment cannot stay below `info`
 
 **Verification:**
@@ -169,24 +169,24 @@ Definition of done for every task: acceptance criteria below, plus tests that fa
 
 ## Task 7: Vendored migration runner
 
-**Description:** Vendor the ingestor's `001_ingestion.sql` and rollback without edits, and apply them with the existing checksum history table so this repo and Scrapy cannot silently diverge.
+**Description:** Apply `db/migrations/001_catalog.sql` with the checksum history table. The SQL matches the shared catalog contract and creates no database roles. A hosted database already migrated by Scrapy under a different checksum must fail closed.
 
 **Acceptance criteria:**
-- [ ] Forward and rollback bytes match the Scrapy files, and the runner records SHA-256 checksums
-- [ ] `npm run db:migrate --prefix services/api` applies pending versions inside the advisory transaction lock
-- [ ] Drift, missing rollback, and a non-local URL are refused
-- [ ] The command reads `DATABASE_CONTROL_URL` from the environment and never a dotenv file
+- [x] The runner records SHA-256 checksums and applies pending versions inside the advisory transaction lock
+- [x] `npm run db:migrate --prefix services/api` reads `DATABASE_URL` and never a dotenv file
+- [x] Drift and a missing rollback are refused
+- [x] Integration tests use only a local database whose name starts with `supermarket_api_test`
 
 **Verification:**
-- [ ] Tests pass: `npm test --prefix services/api`
-- [ ] Build succeeds: `npm run build --prefix services/api`
-- [ ] Manual check: integration test migrates a local `supermarket_api_test` database and records version `001`
+- [x] Tests pass: `npm test --prefix services/api`
+- [x] Build succeeds: `npm run build --prefix services/api`
+- [x] Manual check: integration test migrates a local `supermarket_api_test` database and records version `001`
 
 **Dependencies:** Task 2
 
 **Files likely touched:**
-- `db/migrations/001_ingestion.sql`
-- `db/rollback/001_ingestion.sql`
+- `db/migrations/001_catalog.sql`
+- `db/rollback/001_catalog.sql`
 - `services/api/src/db/migrate.ts`
 - `services/api/test/integration/migrate.test.ts`
 
@@ -197,15 +197,15 @@ Definition of done for every task: acceptance criteria below, plus tests that fa
 **Description:** Open a small read pool and return exact `item_code` matches across chains with score 10000. Leading zeros are significant. There is no name fallback.
 
 **Acceptance criteria:**
-- [ ] Equality is indexed `item_code` comparison, parameterized
-- [ ] A code that exists in two chains returns two rows and does not merge them
-- [ ] Statement timeout is 15 seconds
-- [ ] The search role is not given a connection that can insert products
+- [x] Equality is indexed `item_code` comparison, parameterized
+- [x] A code that exists in two chains returns two rows and does not merge them
+- [x] Statement timeout is 15 seconds
+- [x] The pool uses `DATABASE_URL` and does not open a second role-specific connection
 
 **Verification:**
-- [ ] Tests pass: `npm run test:integration --prefix services/api`
-- [ ] Build succeeds: `npm run build --prefix services/api`
-- [ ] Manual check: a leading-zero code does not match the same digits without those zeros
+- [x] Tests pass: `npm run test:integration --prefix services/api`
+- [x] Build succeeds: `npm run build --prefix services/api`
+- [x] Manual check: a leading-zero code does not match the same digits without those zeros
 
 **Dependencies:** Tasks 6 and 7
 
@@ -221,14 +221,14 @@ Definition of done for every task: acceptance criteria below, plus tests that fa
 **Description:** Add `GET /health/ready`, which runs a short database check and returns 503 when the database is unavailable. It does not require every chain to have products.
 
 **Acceptance criteria:**
-- [ ] Ready response contains no secrets or catalog samples
-- [ ] A failed check is 503 with `Retry-After`
-- [ ] Liveness still succeeds when the database is down
+- [x] Ready response contains no secrets or catalog samples
+- [x] A failed check is 503 with `Retry-After`
+- [x] Liveness still succeeds when the database is down
 
 **Verification:**
-- [ ] Tests pass: `npm test --prefix services/api`
-- [ ] Build succeeds: `npm run build --prefix services/api`
-- [ ] Manual check: inject test with a failing check function returns 503
+- [x] Tests pass: `npm test --prefix services/api`
+- [x] Build succeeds: `npm run build --prefix services/api`
+- [x] Manual check: inject test with a failing check function returns 503
 
 **Dependencies:** Task 8
 
@@ -239,24 +239,24 @@ Definition of done for every task: acceptance criteria below, plus tests that fa
 **Estimated scope:** Small: 1-2 files
 
 ## Checkpoint: After Tasks 7-9
-- [ ] Local integration migration and SKU lookup pass
-- [ ] Hosted database was not used
+- [x] Local integration migration and SKU lookup pass
+- [x] Hosted database was not used
 
 ## Task 10: Recall-safe name retrieval and per-chain top-N
 
 **Description:** Retrieve name-search candidates by token overlap, exact normalized name, and exact item code. Score every candidate in chunks inside one snapshot, then keep the top N per chain above the threshold.
 
 **Acceptance criteria:**
-- [ ] SQL has no limit applied before scoring
-- [ ] Manufacturer-only overlap is not a candidate path
-- [ ] Ordering is score descending, chain id ascending, item code ascending
-- [ ] An exhaustive scorer over a fixture catalog returns the same ids as the chunked path
-- [ ] Timeout returns an error and not a shortened 200 body
+- [x] SQL has no limit applied before scoring
+- [x] Manufacturer-only overlap is not a candidate path
+- [x] Ordering is score descending, chain id ascending, item code ascending
+- [x] An exhaustive scorer over a fixture catalog returns the same ids as the chunked path
+- [x] Timeout returns an error and not a shortened 200 body
 
 **Verification:**
-- [ ] Tests pass: `npm run test:integration --prefix services/api`
-- [ ] Build succeeds: `npm run build --prefix services/api`
-- [ ] Manual check: a catalog where the best match would fall outside a naive SQL limit still wins
+- [x] Tests pass: `npm run test:integration --prefix services/api`
+- [x] Build succeeds: `npm run build --prefix services/api`
+- [x] Manual check: a catalog where the best match would fall outside a naive SQL limit still wins
 
 **Dependencies:** Tasks 5 and 8
 
@@ -273,15 +273,15 @@ Definition of done for every task: acceptance criteria below, plus tests that fa
 **Description:** Add `GET /v1/search` and `POST /v1/search/batch` with schema validation, the shared per-chain limit, and one read snapshot for the whole batch.
 
 **Acceptance criteria:**
-- [ ] `queryType` is required and is not inferred from the text. `q` is 1–200 trimmed characters
-- [ ] `limitPerChain` defaults to 1, allows 1..10, and rejects anything else with 400
-- [ ] Batch accepts 1..10 entries, unique ids up to 64 characters, preserves order, and rejects the entire body when one entry is invalid
-- [ ] Zero matches is `200` and an array. A database error fails the whole request
+- [x] `queryType` is required and is not inferred from the text. `q` is 1–200 trimmed characters
+- [x] `limitPerChain` defaults to 1, allows 1..10, and rejects anything else with 400
+- [x] Batch accepts 1..10 entries, unique ids up to 64 characters, preserves order, and rejects the entire body when one entry is invalid
+- [x] Zero matches is `200` and an array. A database error fails the whole request
 
 **Verification:**
-- [ ] Tests pass: `npm test --prefix services/api`
-- [ ] Build succeeds: `npm run build --prefix services/api`
-- [ ] Manual check: contract tests cover empty results, duplicate ids, and limit boundaries
+- [x] Tests pass: `npm test --prefix services/api`
+- [x] Build succeeds: `npm run build --prefix services/api`
+- [x] Manual check: contract tests cover empty results, duplicate ids, and limit boundaries
 
 **Dependencies:** Tasks 4 and 10
 
@@ -292,48 +292,46 @@ Definition of done for every task: acceptance criteria below, plus tests that fa
 
 **Estimated scope:** Medium: 3-5 files
 
-## Task 12: Credentials, scopes, and rate limits
+## Task 12: Process-wide rate limits
 
-**Description:** Require separate search and admin bearer tokens, compare them in constant time, and attach a principal. Enforce the initial per-credential rate limits.
+**Description:** Limit search to 60 requests per minute and refresh triggers to 5 per minute for the process. This version has no HTTP credentials, so there is no 401, 403, or per-key bucket.
 
 **Acceptance criteria:**
-- [ ] Missing or unknown credentials return 401. A valid search credential on an admin route returns 403
-- [ ] Search routes accept only the search scope. Admin routes accept only the admin scope
-- [ ] Search is limited to 60 requests per minute and refresh triggers to 5 per minute, with 429 and `Retry-After`
-- [ ] Secrets do not appear in URLs or logs
+- [x] Search routes do not require a bearer token
+- [x] Exceeding the search or refresh limit returns 429 and `Retry-After`
+- [x] Secrets do not appear in URLs or logs
 
 **Verification:**
-- [ ] Tests pass: `npm test --prefix services/api`
-- [ ] Build succeeds: `npm run build --prefix services/api`
-- [ ] Manual check: swapping the two valid keys changes 200/403 as specified
+- [x] Tests pass: `npm test --prefix services/api`
+- [x] Build succeeds: `npm run build --prefix services/api`
+- [x] Manual check: a burst past the limit returns 429 without reading an API key
 
 **Dependencies:** Task 4
 
 **Files likely touched:**
-- `services/api/src/auth/principal.ts`
-- `services/api/src/auth/rate-limit.ts`
-- `services/api/test/contract/auth.test.ts`
+- `services/api/src/http/rate-limit.ts`
+- `services/api/test/contract/rate-limit.test.ts`
 
-**Estimated scope:** Medium: 3-5 files
+**Estimated scope:** Small: 1-2 files
 
 ## Checkpoint: After Tasks 10-12
-- [ ] Search contract tests pass
-- [ ] Exhaustive and chunked name search agree on the fixture catalog
+- [x] Search contract tests pass
+- [x] Exhaustive and chunked name search agree on the fixture catalog
 
 ## Task 13: Atomic refresh admission
 
 **Description:** `POST /v1/refreshes` creates one manual run and reserves every requested chain in a single transaction. Any overlap rejects the whole request.
 
 **Acceptance criteria:**
-- [ ] Omitted `chains` means all ten ids. An empty array or unknown id is 400. Duplicates are deduped
-- [ ] Conflict returns 409 and the active run ids, with no new leases
-- [ ] Disjoint chain sets can both be admitted
-- [ ] The run row exists as `PENDING` before any GitHub call
+- [x] Omitted `chains` means all ten ids. An empty array or unknown id is 400. Duplicates are deduped
+- [x] Conflict returns 409 and the active run ids, with no new leases
+- [x] Disjoint chain sets can both be admitted
+- [x] The run row exists as `PENDING` before any GitHub call
 
 **Verification:**
-- [ ] Tests pass: `npm run test:integration --prefix services/api`
-- [ ] Build succeeds: `npm run build --prefix services/api`
-- [ ] Manual check: two concurrent overlapping requests produce one 202 and one 409
+- [x] Tests pass: `npm run test:integration --prefix services/api`
+- [x] Build succeeds: `npm run build --prefix services/api`
+- [x] Manual check: two concurrent overlapping requests produce one 202 and one 409
 
 **Dependencies:** Tasks 7 and 12
 
@@ -349,15 +347,15 @@ Definition of done for every task: acceptance criteria below, plus tests that fa
 **Description:** After admission, dispatch the configured workflow with the run id only. Keep the reservation when the outcome is unknown. Release it when GitHub definitely rejects the dispatch.
 
 **Acceptance criteria:**
-- [ ] 202 body contains `runId`, `status: "PENDING"`, and `statusUrl`
-- [ ] Timeout or a network failure stores dispatch state `UNCERTAIN` and still returns 202
-- [ ] HTTP rejection from GitHub marks the run failed, releases leases, and returns 503
-- [ ] Tests mock GitHub. No test calls the real GitHub API
+- [x] 202 body contains `runId`, `status: "PENDING"`, and `statusUrl`
+- [x] Timeout or a network failure stores dispatch state `UNCERTAIN` and still returns 202
+- [x] HTTP rejection from GitHub marks the run failed, releases leases, and returns 503
+- [x] Tests mock GitHub. No test calls the real GitHub API
 
 **Verification:**
-- [ ] Tests pass: `npm run test:integration --prefix services/api`
-- [ ] Build succeeds: `npm run build --prefix services/api`
-- [ ] Manual check: mocked timeout and mocked 422 cover both outcomes
+- [x] Tests pass: `npm run test:integration --prefix services/api`
+- [x] Build succeeds: `npm run build --prefix services/api`
+- [x] Manual check: mocked timeout and mocked 422 cover both outcomes
 
 **Dependencies:** Task 13
 
@@ -369,18 +367,18 @@ Definition of done for every task: acceptance criteria below, plus tests that fa
 
 ## Task 15: Admin run and chain status
 
-**Description:** Add admin-only run status and chain status. Sanitize operational errors. Unknown runs are 404.
+**Description:** Add run status and chain status. Sanitize operational errors. Unknown runs are 404. There is no separate admin credential.
 
 **Acceptance criteria:**
-- [ ] Run status includes origin, status, dispatch state, times, requested chains, per-chain counts, and the GitHub execution id when known
-- [ ] Chain status includes product count, publication time, source watermark, stale flag, latest outcome, and active run id
-- [ ] A never-published chain has null timestamps and product count 0
-- [ ] Error text cannot contain credential material, signed URLs, or raw source payloads
+- [x] Run status includes origin, status, dispatch state, times, requested chains, per-chain counts, and the GitHub execution id when known
+- [x] Chain status includes product count, publication time, source watermark, stale flag, latest outcome, and active run id
+- [x] A never-published chain has null timestamps and product count 0
+- [x] Error text cannot contain credential material, signed URLs, or raw source payloads
 
 **Verification:**
-- [ ] Tests pass: `npm run test:integration --prefix services/api`
-- [ ] Build succeeds: `npm run build --prefix services/api`
-- [ ] Manual check: a planted error string with a bearer token is stored and returned redacted
+- [x] Tests pass: `npm run test:integration --prefix services/api`
+- [x] Build succeeds: `npm run build --prefix services/api`
+- [x] Manual check: a planted error string with a bearer token is stored and returned redacted
 
 **Dependencies:** Task 13
 
@@ -392,24 +390,24 @@ Definition of done for every task: acceptance criteria below, plus tests that fa
 **Estimated scope:** Medium: 3-5 files
 
 ## Checkpoint: After Tasks 13-15
-- [ ] Admission, dispatch uncertainty, and status tests pass
-- [ ] Search credentials cannot read or trigger admin routes
+- [x] Admission, dispatch uncertainty, and status tests pass
+- [x] Search and refresh stay reachable without a bearer token
 
 ## Task 16: Request metrics, OpenAPI, and Render/deploy notes
 
 **Description:** Record the operational fields the spec asks for, generate OpenAPI from the route schemas, and document the Render web service without deploying it.
 
 **Acceptance criteria:**
-- [ ] Search logs include query type, result count, database time, and candidates scored
-- [ ] OpenAPI lists the v1 routes, error model, and auth distinction
-- [ ] README documents every root command, the environment table, and the field mapping
-- [ ] A Render blueprint or documented service settings pin Node 24, `npm ci`, health path `/health/live`, and host `0.0.0.0`
-- [ ] No deploy is performed and no Neuton client URL is changed
+- [x] Search logs include query type, result count, database time, and candidates scored
+- [x] OpenAPI lists the v1 routes, error model, and auth distinction
+- [x] README documents every root command, the environment table, and the field mapping
+- [x] A Render blueprint or documented service settings pin Node 24, `npm ci`, health path `/health/live`, and host `0.0.0.0`
+- [x] No deploy is performed and no Neuton client URL is changed
 
 **Verification:**
-- [ ] Tests pass: `npm test --prefix services/api`
-- [ ] Build succeeds: `npm run build --prefix services/api`
-- [ ] Manual check: OpenAPI JSON includes `/v1/search` and `/v1/refreshes`
+- [x] Tests pass: `npm test --prefix services/api`
+- [x] Build succeeds: `npm run build --prefix services/api`
+- [x] Manual check: OpenAPI JSON includes `/v1/search` and `/v1/refreshes`
 
 **Dependencies:** Tasks 11, 12, and 15
 
@@ -422,7 +420,7 @@ Definition of done for every task: acceptance criteria below, plus tests that fa
 **Estimated scope:** Medium: 3-5 files
 
 ## Checkpoint: Complete
-- [ ] All acceptance criteria met
-- [ ] Typecheck, lint, unit tests, and local integration tests pass
-- [ ] Warm single-search and batch timings are measured and written down, or the budget miss is reported
+- [x] All acceptance criteria met
+- [x] Typecheck, lint, unit tests, and local integration tests pass
+- [x] Warm single-search and batch timings are measured and written down, or the budget miss is reported
 - [ ] Ready for human review

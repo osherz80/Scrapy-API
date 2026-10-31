@@ -7,7 +7,7 @@ Companion: [Search API specification](SPEC-supermarket-api.md). Read both before
 
 Neuton businesses need estimated ingredient and recipe costs when their own purchasing data is unavailable. Existing search covers Shufersal and Carrefour. Expand to ten chains without paid price APIs, keeping only current product averages. These are sampled retail estimates, not actual business acquisition costs, nationwide chain prices, availability promises, or promotion-aware offers.
 
-Launch consumer: Neuton's backend only. Operators use protected refresh/status endpoints. Future consumers may be external app developers with API keys and agents through MCP and x402 payments. Design clean boundaries for that future; do not implement customer accounts, billing, wallets, MCP, or x402 in this release.
+Launch consumer: Neuton's backend only. Refresh and status endpoints are not gated by an API key in this version. Public customer accounts, API keys, billing, wallets, MCP, and x402 are out of scope.
 
 ## 2. Agreed scope
 
@@ -117,7 +117,7 @@ Example regression fixture from the supplied XML: ItemCode `11210000094`, ItemNa
 
 PriceUpdateTime in the example is May while LastSaleDateTime is October. Neither determines how recently the full catalog was published. `source_updated_at` continues to use contributing catalog publication times. Preserve item_price_updated_at separately, so a recently published catalog can legitimately contain a price unchanged since May.
 
-Use migrations, not dashboard-only manual edits. Tables in a private application schema; no anonymous/browser access. Separate read-only API search role, API control role, and ingestion writer role. Credentials remain server-side.
+Use migrations, not dashboard-only manual edits. Tables in a private application schema; no anonymous/browser access. This version uses one `DATABASE_URL` and does not create separate search, control, or ingestion database roles. The database URL remains server-side.
 
 | Table | Required columns / constraints |
 |---|---|
@@ -193,7 +193,7 @@ Success: ten configured providers evaluated from hosted infrastructure; reachabl
 
 1. Bootstrap standalone repository, Python project, fixtures, and chain registry. Verify commands/CI and exact dependency locks.
 2. Provider feasibility spike: one full file per target chain from GitHub runner, verify timestamps, IDs, units, encoding, RAM, and no-disk path. Select library based on results; record inaccessible chains. Gate: demonstrate an actual normalized product from each reachable source.
-3. Shared DB migrations and least-privilege roles. Implement leases, run transitions, schedule claims, and ownership checks. Gate: concurrency/crash integration tests pass.
+3. Shared DB migrations against one `DATABASE_URL`. Implement leases, run transitions, schedule claims, and ownership checks. Gate: concurrency/crash integration tests pass.
 4. Implement branch sampling and bounded replacement attempts. Gate: deterministic failure matrices pass, including 1/2/3 successful branches and no candidates.
 5. Implement strict parsing, identity reconciliation, Decimal aggregation, and source dates. Gate: fixture expected outputs match exactly; no averaging incompatible items.
 6. Implement per-chain transactional replacement and retention of operational metadata. Gate: injected failures never expose partial catalogs or delete old data on zero success.

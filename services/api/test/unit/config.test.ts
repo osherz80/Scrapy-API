@@ -5,18 +5,11 @@ import { ConfigError, loadConfig } from '../../src/config.ts';
 
 function baseEnv(): Record<string, string> {
   return {
-    DATABASE_READ_URL: 'postgresql://search:search-password@db.example:5432/postgres?sslmode=require',
-    DATABASE_CONTROL_URL: 'postgresql://control:control-password@db.example:5432/postgres?sslmode=require',
-    SEARCH_API_KEY: 's'.repeat(32),
-    ADMIN_API_KEY: 'a'.repeat(32),
-    GITHUB_REPOSITORY: 'neuton/scrapy-api',
-    GITHUB_WORKFLOW_ID: 'refresh.yml',
-    GITHUB_REF: 'refs/heads/main',
-    GITHUB_TOKEN: `ghs_${'t'.repeat(20)}`,
+    DATABASE_URL: 'postgresql://app:app-password@db.example:5432/postgres?sslmode=require',
   };
 }
 
-test('loadConfig applies the spec defaults', () => {
+test('loadConfig applies the spec defaults from DATABASE_URL alone', () => {
   const config = loadConfig(baseEnv());
   assert.equal(config.port, 3000);
   assert.equal(config.host, '0.0.0.0');
@@ -29,23 +22,16 @@ test('loadConfig applies the spec defaults', () => {
   assert.equal(config.searchRateLimitPerMinute, 60);
   assert.equal(config.refreshRateLimitPerMinute, 5);
   assert.equal(config.dbConcurrency, 2);
+  assert.equal(config.githubRepository, '');
+  assert.equal(config.githubToken, '');
 });
 
-test('loadConfig names every missing required value and no secret', () => {
+test('loadConfig names a missing DATABASE_URL and no secret', () => {
   assert.throws(
     () => loadConfig({}),
     (error: unknown) => {
       assert.ok(error instanceof ConfigError);
-      assert.deepEqual(error.missing, [
-        'DATABASE_READ_URL',
-        'DATABASE_CONTROL_URL',
-        'SEARCH_API_KEY',
-        'ADMIN_API_KEY',
-        'GITHUB_REPOSITORY',
-        'GITHUB_WORKFLOW_ID',
-        'GITHUB_REF',
-        'GITHUB_TOKEN',
-      ]);
+      assert.deepEqual(error.missing, ['DATABASE_URL']);
       assert.equal(error.message.includes('postgresql://'), false);
       assert.equal(error.message.includes('password'), false);
       return true;
@@ -58,33 +44,43 @@ test('production cannot keep a debug log level', () => {
   assert.equal(config.logLevel, 'info');
 });
 
-test('remote database URLs cannot disable TLS', () => {
+test('a remote database URL cannot disable TLS', () => {
   assert.throws(
     () =>
       loadConfig({
         ...baseEnv(),
-        DATABASE_READ_URL: 'postgresql://search:search-password@db.example:5432/postgres?sslmode=disable',
+        DATABASE_URL: 'postgresql://app:app-password@db.example:5432/postgres?sslmode=disable',
       }),
-    (error: unknown) => error instanceof ConfigError && error.invalid.includes('DATABASE_READ_URL'),
+    (error: unknown) => error instanceof ConfigError && error.invalid.includes('DATABASE_URL'),
   );
 });
 
-test('local database URLs may omit a password', () => {
+test('a local database URL may omit a password', () => {
   const config = loadConfig({
     ...baseEnv(),
-    DATABASE_READ_URL: 'postgresql://search@127.0.0.1:5432/supermarket_api_test',
+    DATABASE_URL: 'postgresql://app@127.0.0.1:5432/supermarket_api_test',
   });
-  assert.match(config.databaseReadUrl, /127\.0\.0\.1/);
+  assert.match(config.databaseUrl, /127\.0\.0\.1/);
 });
 
-test('the two API keys must differ and be at least 32 characters', () => {
-  const secret = 'k'.repeat(32);
+test('refresh dispatch settings are accepted together and rejected when incomplete', () => {
+  const config = loadConfig({
+    ...baseEnv(),
+    GITHUB_REPOSITORY: 'osherz80/Scrapy-API',
+    GITHUB_WORKFLOW_ID: 'refresh.yml',
+    GITHUB_REF: 'refs/heads/main',
+    GITHUB_TOKEN: `ghs_${'t'.repeat(20)}`,
+  });
+  assert.equal(config.githubRepository, 'osherz80/Scrapy-API');
+  assert.equal(config.githubWorkflowId, 'refresh.yml');
+  assert.equal(config.githubRef, 'refs/heads/main');
+
   assert.throws(
-    () => loadConfig({ ...baseEnv(), SEARCH_API_KEY: secret, ADMIN_API_KEY: secret }),
-    (error: unknown) => error instanceof ConfigError && error.invalid.includes('ADMIN_API_KEY'),
-  );
-  assert.throws(
-    () => loadConfig({ ...baseEnv(), SEARCH_API_KEY: 'short' }),
-    (error: unknown) => error instanceof ConfigError && error.invalid.includes('SEARCH_API_KEY'),
+    () => loadConfig({ ...baseEnv(), GITHUB_REPOSITORY: 'osherz80/Scrapy-API' }),
+    (error: unknown) =>
+      error instanceof ConfigError &&
+      error.missing.includes('GITHUB_WORKFLOW_ID') &&
+      error.missing.includes('GITHUB_REF') &&
+      error.missing.includes('GITHUB_TOKEN'),
   );
 });

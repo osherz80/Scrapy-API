@@ -3,12 +3,28 @@ import { randomUUID } from 'node:crypto';
 import Fastify, { LogController, type FastifyInstance } from 'fastify';
 
 import type { AppConfig } from './config.ts';
+import type { CatalogStore } from './db/catalog.ts';
 import { BODY_LIMIT_BYTES, errorBody, HttpError, mapError } from './http/errors.ts';
+import { createRateLimiter, type RateLimiter } from './http/rate-limit.ts';
 import type { Logger } from './logger/types.ts';
+import type { RefreshDeps } from './routes/refreshes.ts';
+import { registerRefresh } from './routes/refreshes.ts';
+import { registerReady } from './routes/health.ts';
+import { registerSearch } from './routes/search.ts';
+import { openApiDocument } from './openapi.ts';
 
 export interface BuildAppOptions {
   config: AppConfig;
   logger: Logger;
+  readyCheck?: () => Promise<boolean>;
+  catalog?: CatalogStore;
+  refresh?: Omit<RefreshDeps, 'config' | 'logger' | 'rateLimit' | 'now'> & {
+    rateLimit?: RateLimiter;
+    now?: () => Date;
+    dispatch?: RefreshDeps['dispatch'];
+  };
+  rateLimit?: RateLimiter;
+  now?: () => Date;
 }
 
 declare module 'fastify' {
@@ -22,12 +38,19 @@ declare module 'fastify' {
 
 export function buildApp(options: BuildAppOptions): FastifyInstance {
   const { logger } = options;
+  const now = options.now ?? (() => new Date());
+  const rateLimit = options.rateLimit ?? createRateLimiter({
+    searchPerMinute: options.config.searchRateLimitPerMinute,
+    refreshPerMinute: options.config.refreshRateLimitPerMinute,
+    now: () => now().getTime(),
+  });
   const observations = new WeakMap<
     object,
     { queryType: string | null; resultCount: number | null }
   >();
   const app = Fastify({
     bodyLimit: BODY_LIMIT_BYTES,
+    requestTimeout: options.config.requestTimeoutMs,
     logger: false,
     logController: new LogController({ disableRequestLogging: true }),
     genReqId: () => randomUUID(),
@@ -82,6 +105,27 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     }
     return reply.code(mapped.statusCode).send(errorBody(mapped, request.id));
   });
+
+  app.get('/openapi.json', async () => openApiDocument());
+
+  registerReady(app, options.readyCheck ?? (async () => false));
+  if (options.catalog) {
+    registerSearch(app, options.catalog, logger, {
+      staleAfterHours: options.config.staleAfterHours,
+      now,
+      rateLimit,
+    });
+  }
+  if (options.refresh) {
+    registerRefresh(app, {
+      config: options.config,
+      store: options.refresh.store,
+      logger,
+      rateLimit: options.refresh.rateLimit ?? rateLimit,
+      now,
+      ...(options.refresh.dispatch ? { dispatch: options.refresh.dispatch } : {}),
+    });
+  }
 
   app.get('/health/live', {
     schema: {
