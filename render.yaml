@@ -3,8 +3,8 @@ services:
     name: supermarket-api
     runtime: node
     plan: free
-    buildCommand: npm ci --prefix services/api && npm run build --prefix services/api
-    startCommand: npm start --prefix services/api
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
     healthCheckPath: /health/live
     envVars:
       - key: NODE_VERSION

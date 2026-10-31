@@ -40,7 +40,7 @@ flowchart LR
   G -->|transactional chain replacement| D
 ```
 
-One future standalone repository, two deployable components: `services/api` and `services/ingestor`, plus `db/migrations`, `contracts`, and `.github/workflows`. Do not add the implementation to Neuton-Back by default. Its existing code is a reference and later integration target.
+The search API lives at the root of the Scrapy-API repository (`src/`, `package.json`, `db/migrations`, `contracts`). The ingestor is a separate deployable and is not nested inside this repository. Do not add the implementation to Neuton-Back by default. Its existing code is a reference and later integration target.
 
 Python 3.12 baseline; pytest, Ruff, Psycopg 3, standard-library Decimal, and an XML parser configured to prohibit external entities. Lock exact dependency versions during bootstrap. Trial `israeli-prices` first for branch listing and full-file retrieval; use OpenIsraeliSupermarkets `il-supermarket-scraper` plus its parser if the trial fails. Do not claim a provider is supported until tested. Keep a provider adapter boundary independent of both libraries.
 

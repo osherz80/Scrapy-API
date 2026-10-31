@@ -7,7 +7,7 @@ import { test } from 'node:test';
 import { MigrationError, loadMigrations } from '../../src/db/migrations.ts';
 
 test('a migration without a rollback file is refused', () => {
-  const root = path.resolve(fileURLToPath(new URL('.', import.meta.url)), '../../../Temp/migration-missing-rollback');
+  const root = path.resolve(fileURLToPath(new URL('.', import.meta.url)), '../../Temp/migration-missing-rollback');
   rmSync(root, { recursive: true, force: true });
   try {
     mkdirSync(path.join(root, 'db', 'migrations'), { recursive: true });

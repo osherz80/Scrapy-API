@@ -160,27 +160,18 @@ Every request log includes `requestId`, endpoint, duration, status, query type, 
 ## 8. Project structure, commands, and code style
 
 ```
-services/api/src/{app,server,config}.ts
-services/api/src/{routes,auth,search,refresh,db,contracts,logger}/
-services/api/src/logger/transports/{console,memory}.ts
-services/api/test/{unit,integration,contract}/
-services/api/package.json
+src/{app,server,config}.ts
+src/{routes,auth,search,refresh,db,contracts,logger}/
+src/logger/transports/{console,memory}.ts
+test/{unit,integration,contract}/
+package.json
 contracts/fixtures/
 db/migrations/
 ```
 
 Required commands to implement (not currently present), from repository root:
 ```
-npm ci --prefix services/api
-npm run dev --prefix services/api
-npm run typecheck --prefix services/api
-npm run lint --prefix services/api
-npm test --prefix services/api
-npm run test:integration --prefix services/api
-npm run build --prefix services/api
-npm start --prefix services/api
-npm run db:migrate --prefix services/api
-```
+npm cinpm run devnpm run typechecknpm run lintnpm testnpm run test:integrationnpm run buildnpm startnpm run db:migrate```
 
 ES modules, strict TypeScript, camelCase public fields, typed repository boundaries, no any-based transport contracts. Export app construction separately from server listening for inject tests. Example style:
 ```typescript

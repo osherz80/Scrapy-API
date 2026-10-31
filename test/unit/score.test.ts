@@ -11,7 +11,7 @@ interface NormalizationFixture {
 
 const fixture = JSON.parse(
   readFileSync(
-    fileURLToPath(new URL('../../../../contracts/fixtures/normalization.json', import.meta.url)),
+    fileURLToPath(new URL('../../contracts/fixtures/normalization.json', import.meta.url)),
     'utf8',
   ),
 ) as NormalizationFixture;

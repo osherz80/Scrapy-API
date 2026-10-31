@@ -2,13 +2,13 @@
 
 ## Overview
 
-Build the standalone Fastify/TypeScript service in this repository (`services/api`) that Neuton will call for sampled retail price estimates. The service reads the shared `supermarket` PostgreSQL catalog, scores name matches with the existing Neuton scorer, and exposes search, batch search, manual refresh, and admin status. Ingestion remains a separate deployable. This plan covers the API only. It does not modify Neuton-Back or the Scrapy ingestor.
+Build the standalone Fastify/TypeScript service in this repository that Neuton will call for sampled retail price estimates. The service reads the shared `supermarket` PostgreSQL catalog, scores name matches with the existing Neuton scorer, and exposes search, batch search, manual refresh, and admin status. Ingestion remains a separate deployable. This plan covers the API only. It does not modify Neuton-Back or the Scrapy ingestor.
 
 Source of truth: `SPEC-supermarket-api.md`, with schema, leases, and field storage owned by `SPEC-supermarket-scraper.md`. Adopted scoring source, read on 2026-10-31 and not modified: `Neuton-Back/src/lib/supermarket/prices.ts` functions `normalizeQuery`, `tokenize`, `scoreMatch`, and `SEARCH_MIN_SCORE` (2500, accept only when score is strictly greater). Conversion compatibility is checked against the behavior of `normalizeProductPrice` and `setUnitsData`.
 
 ## Architecture Decisions
 
-- The API process never loads a dotenv file. Configuration comes from the process environment. Missing names are reported; values are not printed.
+- `npm run dev`, `npm start`, and `npm run db:migrate` load a root `.env` when the file exists. A variable already set in the environment wins. Tests do not load the file. Missing names are reported; values are not printed.
 - One `DATABASE_URL` serves catalog reads and refresh control. There are no separate database roles and no `SEARCH_API_KEY` or `ADMIN_API_KEY`. Search, refresh, and status are not gated by an HTTP credential.
 - Application code uses parameterized SQL through small repository functions. No ORM and no Redis.
 - The scorer is a pure TypeScript module copied from the adopted Neuton source. Python and SQL do not rank matches. `normalized_name` and `name_tokens` must be produced with these same functions.
@@ -23,7 +23,7 @@ Source of truth: `SPEC-supermarket-api.md`, with schema, leases, and field stora
 - Logging has three layers: call-site `Logger`, a facade that filters, merges context, stamps `service`/`environment`/`version`, and redacts, and a transport. The first transport is one JSON line on the matching console method. Tests use an in-memory transport. Raw `q` / `query` values are dropped. Errors log name and message only.
 - Catalog SQL lives in `db/migrations/001_catalog.sql` and `db/rollback/001_catalog.sql`. It matches the shared table contract and uses the `supermarket.schema_migrations` checksum protocol (advisory lock `1397900112, 1`). It does not create database roles. A hosted database already migrated by Scrapy under a different checksum must fail closed rather than be rewritten.
 - Integration tests accept only a local PostgreSQL URL whose database name starts with `supermarket_api_test`. They do not use the hosted database.
-- Node.js 24, TypeScript strict, Fastify 5.12.7, `pg` 8.23.1. TypeScript 7.0.2 is published, but `typescript-eslint` 8.72.1 only accepts TypeScript `>=4.8.4 <6.1.0`, so the compiler is locked at 6.0.3. Versions are locked in `services/api/package-lock.json`. TypeScript is executed by Node's type stripper in dev/test and compiled with `rewriteRelativeImportExtensions` for `npm start`.
+- Node.js 24, TypeScript strict, Fastify 5.12.7, `pg` 8.23.1. TypeScript 7.0.2 is published, but `typescript-eslint` 8.72.1 only accepts TypeScript `>=4.8.4 <6.1.0`, so the compiler is locked at 6.0.3. Versions are locked in `package-lock.json`. TypeScript is executed by Node's type stripper in dev/test and compiled with `rewriteRelativeImportExtensions` for `npm start`.
 
 ## Dependency graph
 
@@ -49,7 +49,7 @@ config, logger, chain ids, error shape
 - [x] Task 4: App factory, error shape, and liveness
 
 ### Checkpoint: Foundation
-- [x] `npm run typecheck`, `npm run lint`, and `npm test` pass via `--prefix services/api`
+- [x] `npm run typecheck`, `npm run lint`, and `npm test` pass from the repository root
 - [x] `GET /health/live` returns 200 through Fastify inject with no database
 
 ### Phase 2: Matching and response compatibility

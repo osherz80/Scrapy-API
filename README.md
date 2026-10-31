@@ -9,24 +9,24 @@ The design is in `SPEC-supermarket-api.md`. Shared catalog rules are in `SPEC-su
 Run these from the repository root:
 
 ```
-npm ci --prefix services/api
-npm run dev --prefix services/api
-npm run typecheck --prefix services/api
-npm run lint --prefix services/api
-npm test --prefix services/api
-npm run test:integration --prefix services/api
-npm run build --prefix services/api
-npm start --prefix services/api
-npm run db:migrate --prefix services/api
+npm ci
+npm run dev
+npm run typecheck
+npm run lint
+npm test
+npm run test:integration
+npm run build
+npm start
+npm run db:migrate
 ```
 
-`npm run dev` and `npm start` listen on `0.0.0.0` and `PORT` (default 3000). The process reads configuration from the environment only. It does not load `.env`.
+`npm run dev` and `npm start` listen on `0.0.0.0` and `PORT` (default 3000). Those commands, and `npm run db:migrate`, load a root `.env` when that file exists. A variable already set in the environment wins over the file. Tests do not load `.env`.
 
 `db:migrate` applies `db/migrations` to `DATABASE_URL` and records SHA-256 checksums in `supermarket.schema_migrations`. Do not point it at a database that Scrapy already migrated: a different checksum fails closed and does not rewrite data. Integration tests start a disposable PostgreSQL cluster under `Temp/pg-api` and delete it when they finish. They refuse any URL whose database name does not start with `supermarket_api_test`.
 
 ## Configuration
 
-Copy `services/api/.env.example` only as a name checklist. The only value required to boot is `DATABASE_URL`. This version has no `SEARCH_API_KEY`, no `ADMIN_API_KEY`, and no separate database roles. A non-local database URL must not use `sslmode=disable`.
+Copy `.env.example` only as a name checklist. The only value required to boot is `DATABASE_URL`. This version has no `SEARCH_API_KEY`, no `ADMIN_API_KEY`, and no separate database roles. A non-local database URL must not use `sslmode=disable`.
 
 `POST /v1/refreshes` is implemented. It admits a run only when all four GitHub settings below are present, then asks GitHub to dispatch a workflow. The scraper does not yet have a manual-run path, so a successful dispatch does not finish ingestion. Without those settings the route returns `503 DISPATCH_UNAVAILABLE` and does not create a run.
 
@@ -63,7 +63,7 @@ Each result keeps Neuton's legacy price names and adds canonical fields. `ItemPr
 
 ## Render
 
-`render.yaml` describes a free web service. Build is `npm ci` then `npm run build` in `services/api`. Start is `npm start`, which listens on `0.0.0.0`. The health check path is `/health/live`. Node is pinned to 24.14.0. This file is not a deploy, and no Neuton client URL is changed here.
+`render.yaml` describes a free web service. Build is `npm ci` then `npm run build` from the repository root. Start is `npm start`, which listens on `0.0.0.0`. Leave Render's root directory empty. The health check path is `/health/live`. Node is pinned to 24.14.0. This file is not a deploy, and no Neuton client URL is changed here.
 
 On 2026-10-31 a warm name lookup against the local fixture (about 30 products, local PostgreSQL 18) averaged 2.2 ms, and ten lookups in one snapshot took 12.7 ms. That fixture is not the free-tier catalog, so the 2 second and 10 second budgets are not claimed for Render. Starting the disposable database is excluded from those warm figures.
 

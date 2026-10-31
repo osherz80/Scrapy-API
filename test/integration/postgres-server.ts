@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const BIN = 'C:\\Program Files\\PostgreSQL\\18\\bin';
-const ROOT = fileURLToPath(new URL('../../../../', import.meta.url));
+const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const DIR = path.join(ROOT, 'Temp', 'pg-api');
 const PORT = 55432;
 

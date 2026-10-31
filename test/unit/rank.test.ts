@@ -75,7 +75,7 @@ test('sku ranking is exact and keeps leading zeros', () => {
 });
 
 test('the catalog migration does not create database roles', () => {
-  const sql = readFileSync(fileURLToPath(new URL('../../../../db/migrations/001_catalog.sql', import.meta.url)), 'utf8');
+  const sql = readFileSync(fileURLToPath(new URL('../../db/migrations/001_catalog.sql', import.meta.url)), 'utf8');
   assert.equal(/CREATE ROLE/i.test(sql), false);
   assert.equal(/supermarket_search/i.test(sql), false);
 });
