@@ -54,11 +54,11 @@ config, logger, chain ids, error shape
 
 ### Phase 2: Matching and response compatibility
 - [x] Task 5: Pure scorer and normalization
-- [ ] Task 6: ProductResult field mapping
+- [x] Task 6: ProductResult field mapping
 
 ### Checkpoint: Compatibility
-- [ ] Golden scores match the adopted Neuton scorer, including Hebrew punctuation and `Math.round`
-- [ ] Tabasco 60 ml adapter output converts to 0.181667 ILS/ml through the unchanged Neuton unit functions
+- [x] Golden scores match the adopted Neuton scorer, including Hebrew punctuation and `Math.round`
+- [x] Tabasco 60 ml adapter output converts to 0.181667 ILS/ml through the unchanged Neuton unit functions
 
 ### Phase 3: Database access
 - [ ] Task 7: Vendored migration runner

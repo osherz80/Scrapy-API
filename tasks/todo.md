@@ -142,16 +142,16 @@ Definition of done for every task: acceptance criteria below, plus tests that fa
 **Description:** Map a catalog row plus a score into the legacy price fields Neuton already reads, and add the canonical price, currency, sample count, timestamps, and stale flag.
 
 **Acceptance criteria:**
-- [ ] Field mapping matches spec section 3 and scraper spec section 7.1, including empty strings for unpersisted XML fields
-- [ ] The 60 ml Tabasco row returns `UnitQty` `מיליליטר`, `Quantity` `"60"`, and `ItemPrice` `"10.9000"`
-- [ ] Running that result through the frozen Neuton `setUnitsData` / `normalizeProductPrice` snapshot yields base unit ml, amount 60.000, and cost 0.181667
-- [ ] A second SKU stays a different result. Missing package data stays searchable and leaves conversion strings empty
-- [ ] `UnitOfMeasure` `100 מיליליטר` is a derived comparison basis, not the package quantity
+- [x] Field mapping matches spec section 3 and scraper spec section 7.1, including empty strings for unpersisted XML fields
+- [x] The 60 ml Tabasco row returns `UnitQty` `מיליליטר`, `Quantity` `"60"`, and `ItemPrice` `"10.9000"`
+- [x] Running that result through the frozen Neuton `setUnitsData` / `normalizeProductPrice` snapshot yields base unit ml, amount 60.000, and cost 0.181667
+- [x] A second SKU stays a different result. Missing package data stays searchable and leaves conversion strings empty
+- [x] `UnitOfMeasure` `100 מיליליטר` is a derived comparison basis, not the package quantity
 
 **Verification:**
-- [ ] Tests pass: `npm test --prefix services/api`
-- [ ] Build succeeds: `npm run build --prefix services/api`
-- [ ] Manual check: stale boundary tests at exactly 48 hours and one millisecond past it
+- [x] Tests pass: `npm test --prefix services/api`
+- [x] Build succeeds: `npm run build --prefix services/api`
+- [x] Manual check: stale boundary tests at exactly 48 hours and one millisecond past it
 
 **Dependencies:** Task 5
 
@@ -164,8 +164,8 @@ Definition of done for every task: acceptance criteria below, plus tests that fa
 **Estimated scope:** Medium: 3-5 files
 
 ## Checkpoint: After Tasks 5-6
-- [ ] Scorer and adapter tests pass
-- [ ] No Neuton-Back files were modified
+- [x] Scorer and adapter tests pass
+- [x] No Neuton-Back files were modified
 
 ## Task 7: Vendored migration runner
 
