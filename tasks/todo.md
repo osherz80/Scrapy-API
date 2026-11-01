@@ -137,58 +137,66 @@ Definition of done for every task: acceptance criteria below, plus tests that fa
 
 **Estimated scope:** Small: 1-2 files
 
-## Task 6: ProductResult field mapping
+## Task 6: camelCase raw-row search contract
 
-**Description:** Map a catalog row plus a score into the legacy price fields Neuton already reads, and add the canonical price, currency, sample count, timestamps, and stale flag.
+**Description:** Convert every `public.products` row to camelCase once at the DB boundary, score it with the unchanged scorer, and return a flat `{ score, ...row }` minus internal columns. No legacy mapping, no unit conversion, no derived comparison fields.
 
 **Acceptance criteria:**
-- [x] Field mapping matches spec section 3 and scraper spec section 7.1, including empty strings for unpersisted XML fields
-- [x] The 60 ml Tabasco row returns `UnitQty` `מיליליטר`, `Quantity` `"60"`, and `ItemPrice` `"10.9000"`
-- [x] Running that result through the frozen Neuton `setUnitsData` / `normalizeProductPrice` snapshot yields base unit ml, amount 60.000, and cost 0.181667
-- [x] A second SKU stays a different result. Missing package data stays searchable and leaves conversion strings empty
-- [x] `UnitOfMeasure` `100 מיליליטר` is a derived comparison basis, not the package quantity
+- [x] `camelizeRow()` renames every column generically; SQL keeps real DB column names and adds no aliases
+- [x] `toSearchResult()` strips `runId`, `updatedAt`, `nameTokens`, and defensively `normalizedName`; keeps `subchainId` and `storeId`
+- [x] `score` is assigned last and wins over any input `score` key
+- [x] `SELECT *` plus one denylist means a future non-internal column passes through untouched
+- [x] Values are DB-native: `text` stays text, `numeric` is a string, `integer` is a number, timestamps are ISO strings
+- [x] No PascalCase alias, `price`, `currency`, `isStale`, or `sourceUpdatedAt` appears in a search response
 
 **Verification:**
 - [x] Tests pass: `npm test`
 - [x] Build succeeds: `npm run build`
-- [x] Manual check: stale boundary tests at exactly 48 hours and one millisecond past it
+- [x] Manual check: contract and unit tests assert every response key matches `/^[a-z][A-Za-z0-9]*$/` and that internal keys are absent in both spellings
 
 **Dependencies:** Task 5
 
 **Files likely touched:**
-- `src/search/product-result.ts`
-- `src/contracts/chains.ts`
-- `test/unit/product-result.test.ts`
-- `test/fixtures/neuton-units.ts`
+- `src/db/rows.ts`
+- `src/search/row-result.ts`
+- `src/search/rank.ts`
+- `src/db/catalog.ts`
+- `src/routes/search.ts`
+- `test/unit/rows.test.ts`
+- `test/unit/row-result.test.ts`
+- `test/unit/rank.test.ts`
+- `test/contract/search.test.ts`
 
 **Estimated scope:** Medium: 3-5 files
 
 ## Checkpoint: After Tasks 5-6
-- [x] Scorer and adapter tests pass
+- [x] Scorer and raw-row contract tests pass
 - [x] No Neuton-Back files were modified
 
-## Task 7: Vendored migration runner
+## Task 7: Read the scraper-owned schema
 
-**Description:** Apply `db/migrations/001_catalog.sql` with the checksum history table. The SQL matches the shared catalog contract and creates no database roles. A hosted database already migrated by Scrapy under a different checksum must fail closed.
+**Description:** Remove the API's migration runner and `db/` directory entirely. Runtime SQL uses `public.*`. Integration tests build a disposable database from a read-only copy of the scraper's migrations 001–005.
 
 **Acceptance criteria:**
-- [x] The runner records SHA-256 checksums and applies pending versions inside the advisory transaction lock
-- [x] `npm run db:migrate` reads `DATABASE_URL` from the environment, or from a root `.env` when that file exists
-- [x] Drift and a missing rollback are refused
-- [x] Integration tests use only a local database whose name starts with `supermarket_api_test`
+- [x] `src/db/migrate.ts`, `src/db/migrate-cli.ts`, `src/db/migrations.ts`, `db/migrations/`, `db/rollback/`, and the `db:migrate` script are deleted
+- [x] Every runtime `supermarket.` reference is now `public.` (search, refresh control, status)
+- [x] `test/fixtures/scraper-schema/` vendors scraper migrations 001–005 read-only; the API never issues production DDL
+- [x] Integration tests still use only a local database whose name starts with `supermarket_api_test`
 
 **Verification:**
 - [x] Tests pass: `npm test`
+- [x] Integration passes: `npm run test:integration`
 - [x] Build succeeds: `npm run build`
-- [x] Manual check: integration test migrates a local `supermarket_api_test` database and records version `001`
+- [x] Manual check: no `supermarket.` string remains in `src/`; only vendored fixture SQL contains it
 
 **Dependencies:** Task 2
 
 **Files likely touched:**
-- `db/migrations/001_catalog.sql`
-- `db/rollback/001_catalog.sql`
-- `src/db/migrate.ts`
-- `test/integration/migrate.test.ts`
+- `src/refresh/store.ts`
+- `test/fixtures/scraper-schema/`
+- `test/integration/scraper-schema.ts`
+- `test/integration/catalog.test.ts`
+- `package.json`
 
 **Estimated scope:** Medium: 3-5 files
 
@@ -239,7 +247,7 @@ Definition of done for every task: acceptance criteria below, plus tests that fa
 **Estimated scope:** Small: 1-2 files
 
 ## Checkpoint: After Tasks 7-9
-- [x] Local integration migration and SKU lookup pass
+- [x] Local integration applies vendored scraper migrations 001–005 and SKU lookup passes
 - [x] Hosted database was not used
 
 ## Task 10: Recall-safe name retrieval and per-chain top-N
@@ -424,3 +432,69 @@ Definition of done for every task: acceptance criteria below, plus tests that fa
 - [x] Typecheck, lint, unit tests, and local integration tests pass
 - [x] Warm single-search and batch timings are measured and written down, or the budget miss is reported
 - [ ] Ready for human review
+
+
+## Raw-row search contract (2026-11-01)
+
+Spec: `SPEC-raw-row-search.md`. Supersedes the response-mapping parts of
+`SPEC-supermarket-api.md`.
+
+Status: implemented; typecheck, lint, unit/contract tests, local integration and
+build pass.
+
+- [x] `GET /v1/search` and `POST /v1/search/batch` return flat
+  `{ score, ...row }` objects built from the full `public.products` row.
+- [x] `camelizeRow()` renames every column generically at the DB boundary; SQL
+  keeps real column names and adds no aliases.
+- [x] One denylist strips `runId`, `updatedAt`, `nameTokens`, and defensively
+  `normalizedName`; `subchainId` and `storeId` stay.
+- [x] `score` is assigned last.
+- [x] Values are DB-native: text as text, numeric as string, integer as number,
+  timestamptz as ISO string. No money formatting or unit conversion.
+- [x] Legacy mapping is gone: `ProductResult`, `PRICE_ITEM_FIELDS`,
+  `CatalogProduct`, `isStale`, `price`, `currency`, `sourceUpdatedAt`,
+  comparison fields, `product-result.ts`, and the Neuton unit fixtures.
+- [x] Exact-name recall is option B: `lower(btrim(item_name)) = $2`, plus
+  `item_code` equality and `name_tokens` overlap. `normalized_name` is gone.
+- [x] The API owns no schema: `src/db/migrate*.ts`, `db/migrations/`,
+  `db/rollback/`, and `db:migrate` are deleted. Runtime SQL uses `public.*`.
+- [x] Integration tests apply a read-only copy of scraper migrations 001–005
+  from `test/fixtures/scraper-schema/` and prove a newly added column appears
+  as a camelCase key without a code change.
+- [x] `README.md`, `src/openapi.ts`, `SPEC-supermarket-api.md` (§3, §4 search
+  bodies, §5, §8, §9, §10), `tasks/plan.md`, and this file are updated.
+- [ ] Human approval before any deploy or Neuton client change.
+
+
+## Integration follow-up: align with the implemented scraper (2026-10-31)
+
+Status: partly closed. Schema alignment is done; refresh payload and locking
+remain open and belong to a separate refresh spec. The API already owns the
+manual refresh trigger (`POST /v1/refreshes`); no separate scraper admission CLI
+is required for the normal API-driven flow.
+
+- [x] Update all runtime SQL, database fixtures and schema documentation from
+  `supermarket.*` to `public.*`. Scraper migration 002 already moved all seven
+  tables, the validation function and migration history into public and removed
+  the supermarket schema. Role names (supermarket_control/search/ingestor) are
+  permission groups, not schemas. Vendored fixture SQL still contains
+  `supermarket.*` because it reproduces the historical migrations verbatim.
+- [ ] Update `src/refresh/dispatch.ts`: send workflow inputs
+  `{ mode: "refresh", run_id: runId }`, not `{ runId }`. Target the scraper's
+  `.github/workflows/refresh.yml` and configured Git ref. Verify acknowledged,
+  uncertain and definitely rejected delivery behavior against this exact payload.
+- [ ] Align admission/recovery locking with the scraper's ordered chain advisory
+  locks and run-first recovery locks. Preserve the previous published catalog's
+  current_run_id during admission, dispatch rejection and abandoned-run recovery;
+  change publication pointers only after successful atomic publication.
+- [ ] Run real PostgreSQL integration tests against the scraper's actual 001–005
+  migrations, including active-run conflicts, dispatch failure/uncertainty,
+  recovery and preservation of the previously published catalog.
+- [ ] Run one controlled API admission → GitHub workflow → scraper publication →
+  API status/search smoke test. GitHub's manual UI requires the workflow to exist
+  on the default branch first. No API/worker deployment is implied by this note.
+
+References: Scrapy `db/migrations/001_ingestion.sql` through
+`005_remove_duplicate_xml_columns.sql`, `.github/workflows/refresh.yml`,
+`repository/admission.py`, `repository/recovery.py`, and
+`repository/publication.py`.

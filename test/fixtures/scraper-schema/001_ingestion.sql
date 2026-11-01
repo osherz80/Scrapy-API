@@ -1,6 +1,23 @@
 CREATE SCHEMA IF NOT EXISTS supermarket;
 REVOKE ALL ON SCHEMA supermarket FROM PUBLIC;
 
+DO $$
+DECLARE role_name text;
+BEGIN
+    FOREACH role_name IN ARRAY ARRAY['supermarket_search', 'supermarket_control', 'supermarket_ingestor']
+    LOOP
+        IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = role_name) THEN
+            EXECUTE format('CREATE ROLE %I NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS', role_name);
+        ELSIF EXISTS (
+            SELECT 1 FROM pg_roles WHERE rolname = role_name AND
+                (rolcanlogin OR rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication OR rolbypassrls
+                 OR EXISTS (SELECT 1 FROM pg_auth_members WHERE member = pg_roles.oid))
+        ) THEN
+            RAISE EXCEPTION 'Application group role has unexpected elevated attributes';
+        END IF;
+    END LOOP;
+END $$;
+
 CREATE FUNCTION supermarket.distinct_values(values_array text[]) RETURNS boolean
 LANGUAGE sql IMMUTABLE STRICT SET search_path = pg_catalog
 AS $$ SELECT cardinality(values_array) = (SELECT count(DISTINCT value) FROM unnest(values_array) AS t(value)) $$;
@@ -76,10 +93,10 @@ CREATE TABLE supermarket.products (
     name text NOT NULL CHECK (btrim(name) <> ''),
     manufacturer text,
     currency text NOT NULL DEFAULT 'ILS' CHECK (currency = 'ILS'),
-    price numeric(14,4) NOT NULL CHECK (price > 0),
-    package_quantity numeric CHECK (package_quantity > 0),
+    price numeric(14,4) NOT NULL CHECK (price > 0 AND price < 'Infinity'::numeric),
+    package_quantity numeric CHECK (package_quantity > 0 AND package_quantity < 'Infinity'::numeric),
     package_unit text CHECK (package_unit IN ('g', 'ml', 'unit')),
-    source_quantity numeric CHECK (source_quantity > 0),
+    source_quantity numeric CHECK (source_quantity > 0 AND source_quantity < 'Infinity'::numeric),
     source_unit_qty text CHECK (btrim(source_unit_qty) <> ''),
     item_price_updated_at timestamptz CHECK (isfinite(item_price_updated_at)),
     is_weighted boolean NOT NULL,
@@ -103,6 +120,8 @@ CREATE TABLE supermarket.products (
 );
 CREATE INDEX products_item_code_idx ON supermarket.products(item_code);
 CREATE INDEX products_name_tokens_idx ON supermarket.products USING gin(name_tokens);
+CREATE INDEX refresh_runs_status_created_idx ON supermarket.refresh_runs(status, created_at);
+CREATE INDEX refresh_run_chains_chain_started_idx ON supermarket.refresh_run_chains(chain_id, started_at DESC);
 
 CREATE TABLE supermarket.chain_leases (
     chain_id text PRIMARY KEY REFERENCES supermarket.chains(id),
@@ -128,7 +147,18 @@ INSERT INTO supermarket.chains(id, display_name, enabled) VALUES
 
 REVOKE ALL ON ALL TABLES IN SCHEMA supermarket FROM PUBLIC;
 REVOKE ALL ON ALL FUNCTIONS IN SCHEMA supermarket FROM PUBLIC;
+GRANT USAGE ON SCHEMA supermarket TO supermarket_search, supermarket_control, supermarket_ingestor;
+GRANT SELECT ON supermarket.chains, supermarket.products TO supermarket_search;
+GRANT SELECT ON supermarket.chains TO supermarket_control;
+GRANT SELECT, INSERT, UPDATE, DELETE ON supermarket.refresh_runs, supermarket.refresh_run_chains,
+    supermarket.chain_leases, supermarket.schedule_claims TO supermarket_control, supermarket_ingestor;
+GRANT SELECT ON supermarket.chains TO supermarket_ingestor;
+GRANT UPDATE(current_run_id, catalog_updated_at, source_updated_at, product_count)
+    ON supermarket.chains TO supermarket_ingestor;
+GRANT SELECT, INSERT, UPDATE, DELETE ON supermarket.products TO supermarket_ingestor;
+GRANT EXECUTE ON FUNCTION supermarket.distinct_values(text[]) TO supermarket_control, supermarket_ingestor;
 
+-- Supabase default grants must not make the private schema browser-accessible.
 DO $$
 DECLARE role_name text;
 BEGIN

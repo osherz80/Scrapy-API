@@ -10,8 +10,7 @@ export function openApiDocument(): Record<string, unknown> {
     paths: {
       '/health/live': { get: { operationId: 'live', responses: { '200': { description: 'Process is up' } } } },
       '/health/ready': { get: { operationId: 'ready', responses: { '200': { description: 'Database accepts a check' }, '503': { description: 'Database unavailable' } } } },
-      '/v1/search': { get: { operationId: 'search', parameters: searchParameters, responses: okArray } },
-      '/v1/search/batch': { post: { operationId: 'searchBatch', responses: { '200': { description: 'Results in request order' } } } },
+      '/v1/search': { get: { operationId: 'search', parameters: searchParameters, responses: okArray } },      '/v1/search/batch': { post: { operationId: 'searchBatch', responses: { '200': { description: 'Results in request order' } } } },
       '/v1/refreshes': {
         post: {
           operationId: 'createRefresh',
@@ -54,4 +53,9 @@ const searchParameters = [
   { name: 'limitPerChain', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 10, default: 1 } },
 ];
 
-const okArray = { '200': { description: 'Matching products, or an empty array' } };
+const okArray = {
+  '200': {
+    description:
+      'Scored rows. Each item is a camelCase public.products row minus runId, updatedAt, nameTokens, and normalizedName, plus score. Zero matches is an empty array.',
+  },
+};

@@ -12,7 +12,7 @@ export function registerSearch(
   app: FastifyInstance,
   store: CatalogStore,
   logger: Logger,
-  options: { staleAfterHours: number; now: () => Date; rateLimit: RateLimiter },
+  options: { rateLimit: RateLimiter },
 ): void {
   app.get('/v1/search', async (request) => {
     take(options.rateLimit, 'search');
@@ -20,9 +20,9 @@ export function registerSearch(
     rejectUnknownQueryKeys(query, ['queryType', 'q', 'limitPerChain']);
     const parsed = parseSearchQuery({ queryType: query.queryType, q: query.q });
     const limitPerChain = parseLimitPerChain(query.limitPerChain);
-    const started = Date.now();
-    const result = await guardDatabase(() => runSearch(store, parsed, limitPerChain, options.now(), options.staleAfterHours));
     request.observation.queryType = parsed.queryType;
+    const started = Date.now();
+    const result = await guardDatabase(() => runSearch(store, parsed, limitPerChain));
     request.observation.resultCount = result.items.length;
     logger.info('search', {
       requestId: request.id,
@@ -40,6 +40,7 @@ export function registerSearch(
     rejectUnknownQueryKeys(query, ['limitPerChain']);
     const limitPerChain = parseLimitPerChain(query.limitPerChain);
     const queries = parseBatch(request.body);
+    request.observation.queryType = 'batch';
     const started = Date.now();
     const results = await guardDatabase(() => store.withSnapshot(async (reader) => {
       const rows = [];
@@ -49,13 +50,12 @@ export function registerSearch(
           : await reader.findNameCandidates(entry.q);
         rows.push({
           id: entry.id,
-          items: rankProducts(products, entry, limitPerChain, options.now(), options.staleAfterHours),
+          items: rankProducts(products, entry, limitPerChain),
           candidates: products.length,
         });
       }
       return rows;
     }));
-    request.observation.queryType = 'batch';
     request.observation.resultCount = results.reduce((sum, row) => sum + row.items.length, 0);
     logger.info('search', {
       requestId: request.id,

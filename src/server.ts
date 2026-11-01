@@ -17,7 +17,7 @@ export async function start(env: NodeJS.ProcessEnv = process.env): Promise<void>
     transports: [createConsoleTransport()],
   });
   const logger = factory.create();
-  const pool = createPool(config.databaseUrl, config.dbQueryTimeoutMs);
+  const pool = createPool(config.databaseUrl, config.dbQueryTimeoutMs, config.databaseSslRootCert);
   const app = buildApp({
     config,
     logger,

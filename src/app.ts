@@ -110,11 +110,7 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
 
   registerReady(app, options.readyCheck ?? (async () => false));
   if (options.catalog) {
-    registerSearch(app, options.catalog, logger, {
-      staleAfterHours: options.config.staleAfterHours,
-      now,
-      rateLimit,
-    });
+    registerSearch(app, options.catalog, logger, { rateLimit });
   }
   if (options.refresh) {
     registerRefresh(app, {

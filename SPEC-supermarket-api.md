@@ -1,7 +1,7 @@
 # Specification: supermarket search and control API
 
 Status: implementation-ready design for review; documentation only. Date: 2026-10-30.
-Companion: [Ingestion specification](SPEC-supermarket-scraper.md). Read both. That document owns shared schema, catalog publication, leases, and ingestion; this document owns HTTP behavior, search, security, and consumer compatibility. Together these two files are the implementation handoff and plan.
+Companion: [Ingestion specification](SPEC-supermarket-scraper.md). Read both. That document owns shared schema, catalog publication, leases, and ingestion; this document owns HTTP behavior, search, security, and consumer compatibility. Together these two files are the implementation handoff and plan. Search response mapping is superseded by [SPEC-raw-row-search.md](SPEC-raw-row-search.md) (2026-11-01): search returns scored raw camelCase `public.products` rows, not `ProductResult`.
 
 ## 1. Objective, users, and scope
 
@@ -33,19 +33,15 @@ Observed baseline: exact barcode score 10000; exact name score 9500; token overl
 
 Name searches use existing scoring. SKU searches are exact string equality only, no name fallback or leading-zero removal. Internal codes remain scoped to chain in output; a cross-chain exact-code query may legitimately return unrelated products sharing an internal code. Do not treat their averages as a single global product.
 
-Product response retains existing `chain`, `score`, and legacy PRICE_ITEM_FIELDS names/types for minimal integration changes, and adds canonical numeric `price`, `currency: "ILS"`, `sampleCount`, `sourceUpdatedAt`, `updatedAt`, and `isStale`. `ItemPrice` must equal canonical price rendered as a decimal string. Legacy unit-price values must be derived consistently from averaged price; unknown legacy string fields use empty strings, never invented values. Do not copy branch-specific discounts/sale dates as chain-wide facts. Document each field mapping in implementation and test it against Neuton's conversion functions. `PriceUpdateTime` retains the item price-change timestamp; sourceUpdatedAt separately describes catalog publication freshness. Canonical package fields may also be returned consistently; do not silently change existing field types.
+Search responses are owned by `SPEC-raw-row-search.md` since 2026-11-01. `GET /v1/search` and `POST /v1/search/batch` return each scored product as a flat object: the full `public.products` row converted to camelCase, minus the internal columns `runId`, `updatedAt`, `nameTokens`, and `normalizedName`, plus `score`. There is no legacy `ProductResult` envelope. `ItemCode`, `ItemName`, and `ItemPrice` no longer exist; the raw columns arrive as `itemCode`, `itemName`, and `itemPrice`. The consumer owns semantic mapping and unit conversion.
 
-Field mapping is mandatory, not deferred to an implementer's interpretation. The scraper spec section 7.1 owns the complete XML storage audit. Return ItemCode from item_code, ItemName from name, ManufactureName from manufacturer (empty string if unknown), ItemPrice from averaged price as a decimal string, UnitQty from source_unit_qty, and Quantity from source_quantity as a decimal string. UnitQty and Quantity MUST be the same selected observation's coherent package pair. Never map UnitOfMeasure (e.g. "100 מיליליטר") into UnitQty or interpret its 100 as package quantity. The Tabasco 60 ml example must convert to 60 ml, not 100 ml, and 10.90/60 = 0.181667 ILS/ml after Neuton's six-place rounding.
+Values are database-native: `text` stays text, `numeric` arrives as a string from `pg`, `integer` as a number, `timestamptz` as an ISO string. The API does not format money or derive comparison fields; `unitOfMeasure` and `unitOfMeasurePrice` are stored XML values, not computed ones. `subchainId` and `storeId` are returned because they are part of the row.
 
-Timestamp mapping: return PriceUpdateTime from item_price_updated_at (or empty string if unknown), preserving the source item's last price-change meaning. sourceUpdatedAt is the separate catalog-publication freshness field. The two must not be conflated. Empty legacy fields for unused/unpersisted metadata are acceptable: LastSaleDateTime, ManufactureCountry, ManufactureItemDescription, AllowDiscount, ItemStatus, QtyInPackage, and ItemType. bIsWeighted is "1"/"0" from is_weighted. UnitOfMeasure and UnitOfMeasurePrice are derived coherently from canonical package information when a comparison basis is supported, otherwise both empty strings. No consumer currently requires these comparison fields. For missing package data, UnitQty/Quantity are empty strings rather than guessed values; such a result remains searchable but is not usable for current Neuton cost conversion.
-
-Test the adapter with the exact supplied two Tabasco XML items, missing optional tags, leading-zero SKU, equivalent litre/ml observations, and unknown package units. A scorer test alone does not verify cost-conversion compatibility. Run adapter results through normalizeProductPrice and setUnitsData unchanged to prove correctness.
-
-`isStale` uses sourceUpdatedAt older than 48 hours (configurable design default). `updatedAt` is successful ingestion time and must not reset source freshness. Keep stale products searchable indefinitely until replaced. No catalog means no matches, not a fabricated price. Database unavailability is an error, not an empty successful search.
+The old forwarding mapping, `isStale`, `currency`, and the Neuton `normalizeProductPrice` compatibility tests were removed with `src/search/product-result.ts`. Column discovery is `SELECT *` plus one denylist, so a new non-internal scraper column appears without an API change. Timestamp meaning stays exactly as stored; the API does not conflate price-change time with publication time.
 
 ## 4. HTTP contract
 
-All endpoints use HTTPS, `/v1` prefix except minimal health endpoints, JSON, camelCase property names, and UTC ISO 8601 timestamps. Unknown fields and invalid types are rejected. Set body limit 64 KiB. Query strings are trimmed, 1–200 characters; SKU remains a string. Error codes are stable uppercase identifiers.
+All endpoints use HTTPS, `/v1` prefix except minimal health endpoints, JSON, camelCase property names (search rows use the camelCase form of raw column names), and UTC ISO 8601 timestamps. Unknown fields and invalid types are rejected. Set body limit 64 KiB. Query strings are trimmed, 1–200 characters; SKU remains a string. Error codes are stable uppercase identifiers.
 
 ### Single search
 
@@ -54,7 +50,7 @@ All endpoints use HTTPS, `/v1` prefix except minimal health endpoints, JSON, cam
 - queryType required: name or sku. q required nonblank string. No automatic numeric detection.
 - limitPerChain optional integer 1..10, default 1. Invalid input is 400, not silently clamped.
 - Search every configured chain with available data; no client chain/brand/package filters.
-- 200 body: ProductResult[]; zero qualifying matches returns `[]`.
+- 200 body: `SearchResult[]` (`{ score, ...row }`); zero qualifying matches returns `[]`.
 - Select top N within each chain; flatten results ordered score descending, then chain ID and item code ascending for stable ties. Maximum 100 results. Scores are not price ranking.
 
 ### Batch search
@@ -117,11 +113,11 @@ Status records may contain operational errors sanitized of credentials, signed U
 
 ## 5. Search implementation and candidate correctness
 
-Persist normalized text/tokens generated with the same normalization rules as TypeScript scoring. Prefer API-owned shared normalization fixtures used by the importer; porting normalization alone requires parity fixtures. Do not let Python tokenization silently diverge from JavaScript regex behavior.
+`name_tokens` is produced by the scraper with the same normalization rules as the TypeScript scorer. The API reads it and never writes it. Parity fixtures stay in `contracts/fixtures/normalization.json`; porting normalization requires those fixtures.
 
 SKU: indexed equality on item_code across chains. Return score 10000 for exact matches.
 
-Name: retrieve the union of candidates sharing at least one exact normalized name token, exact raw name matches, and exact item-code matches. The last two preserve existing scoreMatch special cases even under name mode. Use GIN array overlap on name_tokens and equality indexes where needed. Manufacturer-only candidates need not be included because the baseline scorer exits at zero name-token overlap. Validate this reasoning against the extracted source version.
+Name: retrieve the union of candidates with an exact `item_code`, an exact normalized `item_name` (`lower(btrim(item_name)) = $2`), or at least one shared `name_tokens` token. `normalized_name` no longer exists, so the exact-name path is a SQL expression, not a stored column. Manufacturer-only candidates need not be included because the baseline scorer exits at zero name-token overlap. Validate this reasoning against the extracted source version.
 
 Do not impose an arbitrary SQL LIMIT before TypeScript scoring: it can discard the actual best match. Process broad candidate sets in chunks within a consistent snapshot, maintain bounded per-chain top-N heaps, and score every eligible candidate. Optional trigram candidate acceleration is permitted only if proven to preserve golden/exhaustive baseline recall. Do not replace token matching with a generic full-text language stemmer.
 
@@ -161,19 +157,29 @@ Every request log includes `requestId`, endpoint, duration, status, query type, 
 
 ```
 src/{app,server,config}.ts
-src/{routes,auth,search,refresh,db,contracts,logger}/
+src/{routes,search,refresh,db,contracts,logger}/
+src/db/rows.ts                 database row -> camelCase keys
+src/search/row-result.ts       denylist + { ...row, score }
 src/logger/transports/{console,memory}.ts
 test/{unit,integration,contract}/
+test/fixtures/scraper-schema/  read-only copy of scraper migrations 001-005
 package.json
 contracts/fixtures/
-db/migrations/
 ```
 
-Required commands to implement (not currently present), from repository root:
+Required commands, from repository root (no migration command; the API owns no schema):
 ```
-npm cinpm run devnpm run typechecknpm run lintnpm testnpm run test:integrationnpm run buildnpm startnpm run db:migrate```
+npm ci
+npm run dev
+npm run typecheck
+npm run lint
+npm test
+npm run test:integration
+npm run build
+npm start
+```
 
-ES modules, strict TypeScript, camelCase public fields, typed repository boundaries, no any-based transport contracts. Export app construction separately from server listening for inject tests. Example style:
+ES modules, strict TypeScript, camelCase fields (search rows use the camelCase form of raw column names), typed repository boundaries, no any-based transport contracts. Export app construction separately from server listening for inject tests. Example style:
 ```typescript
 type QueryType = 'name' | 'sku';
 interface SearchQuery { queryType: QueryType; q: string }
@@ -181,7 +187,7 @@ async function searchProducts(
   query: SearchQuery,
   limitPerChain: number,
   repository: ProductRepository,
-): Promise<ProductResult[]> {
+): Promise<SearchResult[]> {
   const candidates = repository.iterateCandidates(query);
   return rankCandidates(candidates, query, limitPerChain);
 }
@@ -191,19 +197,19 @@ The snippet communicates boundaries, not an instruction to collect the full data
 
 ## 9. Testing and success criteria
 
-Unit tests: unchanged scorer golden outputs, strict threshold, token normalization, exact SKU semantics, stable sorting, top-N per chain, stale boundaries, field mappings, and input validation. Fixtures must include Hebrew names and unit conversion examples consumed by Neuton.
+Unit tests: unchanged scorer golden outputs, strict threshold, token normalization, exact SKU semantics, stable sorting, top-N per chain, camelCase key conversion, the raw-row denylist, and input validation. Fixtures must include Hebrew names; unit conversion is no longer an API concern.
 
 Contract tests: default one/result-per-chain, limit 1..10, batch 1..10, duplicate IDs rejected, empty successful results as arrays, all/selected refresh bodies, zero matches vs DB failure, error shapes, and sanitized status.
 
 Real PostgreSQL tests: candidate results equal exhaustive baseline, stable read snapshot while importer replaces catalogs, concurrent refresh conflicts, all-or-nothing lease acquisition, duplicate workflow delivery, dispatch uncertainty and expiry, fencing against late workers. Mock GitHub HTTP boundaries; one opt-in deployment smoke validates actual dispatch without coupling ordinary tests to external portals.
 
-End-to-end: daily or manual run publishes means from 1/2/3 branches; API returns correct sampleCount/source dates; absent products disappear; zero-success chain retains old products; stale products still return; all queries retain original scoring. Load test representative catalog and worst allowed batch, record storage including indexes and staging headroom under Supabase free limits. Do not claim production readiness solely from mocked tests.
+End-to-end: daily or manual run publishes rows into `public.products`; the API returns the stored row fields unchanged plus `score`; absent products disappear; zero-success chain retains old products; all queries retain original scoring. Load test representative catalog and worst allowed batch, record storage including indexes and staging headroom under Supabase free limits. Do not claim production readiness solely from mocked tests.
 
 ## 10. Implementation plan
 
 1. Bootstrap the standalone API workspace, runtime/configuration validation, logger facade with console and in-memory transports, test harness, and route schemas. Establish shared IDs/contract fixtures with ingestion. Verify build/typecheck/test scripts.
-2. Extract the existing scorer and normalization into pure modules with golden tests; define complete ProductResult compatibility mapping. Gate: representative original and extracted results are identical.
-3. Consume shared migrations from ingestion; implement bounded pooled access and exact SKU lookup. Gate: real PostgreSQL integration and schema compatibility pass.
+2. Extract the existing scorer and normalization into pure modules with golden tests; define the raw scored-row contract with a single internal-column denylist. Gate: representative original and extracted scores are identical.
+3. Read the scraper-owned `public.products` schema; implement pooled access and exact SKU lookup. Gate: real PostgreSQL integration against the scraper's migrations passes.
 4. Implement recall-preserving name candidate retrieval, chunked scoring, stable top-N, and freshness. Gate: compare against exhaustive baseline over fixture catalogs; no arbitrary pre-scoring truncation.
 5. Add single/batch routes, validation, error shapes, and limits. Gate: contract tests for ten-query cap and all empty-result behavior pass.
 6. Implement manual refresh controller, atomic admission, dispatch correlation, uncertainty recovery, and protected status. Reuse companion lease protocol. Gate: concurrency, timeout, and late-worker tests pass.

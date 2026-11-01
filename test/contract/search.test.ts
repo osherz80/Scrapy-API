@@ -2,14 +2,14 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { buildApp } from '../../src/app.ts';
+import type { AppConfig } from '../../src/config.ts';
 import type { CatalogStore } from '../../src/db/catalog.ts';
 import { createRateLimiter } from '../../src/http/rate-limit.ts';
 import { createLoggerFactory } from '../../src/logger/factory.ts';
 import { createMemoryTransport, type MemoryTransport } from '../../src/logger/transports/memory.ts';
 import { matchesStoredCandidate } from '../../src/search/candidates.ts';
 import type { StoredProduct } from '../../src/search/rank.ts';
-import { normalizeQuery, tokenize } from '../../src/search/score.ts';
-import type { AppConfig } from '../../src/config.ts';
+import { tokenize } from '../../src/search/score.ts';
 
 const NOW = new Date('2026-10-31T12:00:00.000Z');
 
@@ -34,24 +34,19 @@ function config(): AppConfig {
   };
 }
 
-function product(chainId: StoredProduct['chainId'], itemCode: string, name: string): StoredProduct {
+function product(chainId: string, itemCode: string, itemName: string): StoredProduct {
   return {
     chainId,
     itemCode,
-    name,
-    manufacturer: null,
-    price: '4.5000',
-    packageQuantity: '1',
-    packageUnit: 'unit',
-    sourceQuantity: '1',
-    sourceUnitQty: 'יחידה',
-    itemPriceUpdatedAt: null,
-    isWeighted: false,
+    itemName,
+    manufactureName: null,
+    nameTokens: tokenize(itemName),
+    itemPrice: '4.5000',
     sampleCount: 1,
-    sourceUpdatedAt: NOW,
-    updatedAt: NOW,
-    normalizedName: normalizeQuery(name),
-    nameTokens: tokenize(name),
+    subchainId: null,
+    storeId: null,
+    runId: '00000000-0000-4000-8000-000000000001',
+    updatedAt: '2026-10-31T06:00:00.000Z',
   };
 }
 
@@ -96,6 +91,29 @@ test('search validates input and returns an array when nothing matches', async (
   await app.close();
 });
 
+test('single search returns flat scored rows with camelCase columns', async () => {
+  const app = appFor([product('shufersal', '0123', 'חלב')]);
+  const response = await app.inject({ method: 'GET', url: '/v1/search?queryType=sku&q=0123' });
+  assert.equal(response.statusCode, 200);
+  const items = response.json<Array<Record<string, unknown>>>();
+  assert.equal(items.length, 1);
+  const item = items[0];
+  assert.equal(item?.score, 10000);
+  assert.equal(item?.itemCode, '0123');
+  assert.equal(item?.itemName, 'חלב');
+  assert.equal(item?.itemPrice, '4.5000');
+  assert.equal(item?.subchainId, null);
+  assert.equal(item?.storeId, null);
+  for (const key of Object.keys(item ?? {})) {
+    assert.match(key, /^[a-z][A-Za-z0-9]*$/);
+    assert.equal(key.includes('_'), false);
+  }
+  for (const forbidden of ['runId', 'updatedAt', 'nameTokens', 'normalizedName', 'ItemCode', 'ItemPrice', 'isStale', 'price', 'currency']) {
+    assert.equal(item !== undefined && forbidden in item, false);
+  }
+  await app.close();
+});
+
 test('batch preserves order, rejects duplicate ids, and fails closed on a database error', async () => {
   const app = appFor([product('shufersal', '7290000000000', 'חלב')]);
   const response = await app.inject({
@@ -109,10 +127,13 @@ test('batch preserves order, rejects duplicate ids, and fails closed on a databa
     },
   });
   assert.equal(response.statusCode, 200);
-  const body = response.json<{ results: Array<{ id: string; items: unknown[] }> }>();
+  const body = response.json<{ results: Array<{ id: string; items: Array<Record<string, unknown>> }> }>();
   assert.deepEqual(body.results.map((row) => row.id), ['ingredient-1', 'ingredient-2']);
   assert.deepEqual(body.results[0]?.items, []);
   assert.equal(body.results[1]?.items.length, 1);
+  assert.equal(body.results[1]?.items[0]?.score, 10000);
+  assert.equal(body.results[1]?.items[0]?.itemCode, '7290000000000');
+  assert.equal(body.results[1]?.items[0] !== undefined && 'runId' in body.results[1].items[0], false);
 
   const duplicate = await app.inject({
     method: 'POST',

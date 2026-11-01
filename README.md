@@ -17,16 +17,21 @@ npm test
 npm run test:integration
 npm run build
 npm start
-npm run db:migrate
 ```
 
-`npm run dev` and `npm start` listen on `0.0.0.0` and `PORT` (default 3000). Those commands, and `npm run db:migrate`, load a root `.env` when that file exists. A variable already set in the environment wins over the file. Tests do not load `.env`.
+`npm run dev` and `npm start` listen on `0.0.0.0` and `PORT` (default 3000). Both load a root `.env` when that file exists. A variable already set in the environment wins over the file. Tests do not load `.env`.
 
-`db:migrate` applies `db/migrations` to `DATABASE_URL` and records SHA-256 checksums in `supermarket.schema_migrations`. Do not point it at a database that Scrapy already migrated: a different checksum fails closed and does not rewrite data. Integration tests start a disposable PostgreSQL cluster under `Temp/pg-api` and delete it when they finish. They refuse any URL whose database name does not start with `supermarket_api_test`.
+This service owns no schema and has no migration command. It reads the scraper-owned `public.products` tables and never issues DDL. Integration tests apply a read-only copy of the scraper's migrations 001–005 from `test/fixtures/scraper-schema/` to a disposable PostgreSQL cluster under `Temp/pg-api`, and delete it when they finish. They refuse any URL whose database name does not start with `supermarket_api_test`.
 
 ## Configuration
 
 Copy `.env.example` only as a name checklist. The only value required to boot is `DATABASE_URL`. This version has no `SEARCH_API_KEY`, no `ADMIN_API_KEY`, and no separate database roles. A non-local database URL must not use `sslmode=disable`.
+
+If the database uses a CA outside Node's default trust store, provision its CA certificate and set `DATABASE_SSLROOTCERT=certs/supabase-ca.crt` in `.env`. Use the same certificate as the scraper. Relative paths resolve from the process working directory; absolute paths also work. The API enforces certificate and hostname verification for remote databases, including when the URL contains `sslmode=require`. It also supports a URL `sslrootcert` when the environment setting is absent. Certificate files under `certs/` are ignored by Git.
+
+For Render, upload the CA as a secret file (for example `supabase-ca.crt`) and set `DATABASE_SSLROOTCERT=/etc/secrets/supabase-ca.crt`, then redeploy with the updated API. Keep the existing `DATABASE_URL`. A local certificate file is not automatically available on Render.
+
+Connection and query failures log `phase` and `databaseCode` without driver messages, credentials, or query text. `SELF_SIGNED_CERT_IN_CHAIN` means the database CA needs configuring. `/health/ready` checks connectivity; `/health/live` only checks that the process is running.
 
 `POST /v1/refreshes` is implemented. It admits a run only when all four GitHub settings below are present, then asks GitHub to dispatch a workflow. The scraper does not yet have a manual-run path, so a successful dispatch does not finish ingestion. Without those settings the route returns `503 DISPATCH_UNAVAILABLE` and does not create a run.
 
@@ -57,9 +62,23 @@ There is no bearer token. `GET /openapi.json` lists the routes.
 
 Search is limited to 60 requests per minute and refresh triggers to 5 per minute, for the whole process. Over the limit is `429` with `Retry-After`. Error bodies use `{ "error": { "code", "message" }, "requestId" }`. The request id is also returned in `x-request-id`.
 
-## Field mapping
+URL-encode Hebrew search text when using curl from Windows. For example, this searches for `חלב` without depending on the terminal's text encoding:
 
-Each result keeps Neuton's legacy price names and adds canonical fields. `ItemPrice` is the averaged price with four decimal places. `price` is that same value as a JSON number, with `currency` `ILS`. `Quantity` and `UnitQty` come from the stored observation. `UnitOfMeasure` and `UnitOfMeasurePrice` are comparison fields only (`100 g`, `100 ml`, or `1 unit`) and are empty when the package unit is missing. `PriceUpdateTime` is the item price-change time, or `""`. `sourceUpdatedAt` is catalog freshness. `isStale` is true only when that timestamp is strictly older than 48 hours. Name matches must score above 2500. SKU matches are exact `item_code` equality, score 10000, and leading zeros are significant.
+```powershell
+curl.exe "http://localhost:3000/v1/search?queryType=name&q=%D7%97%D7%9C%D7%91&limitPerChain=3"
+```
+
+## Search results
+
+Since 2026-11-01 search returns raw rows, not Neuton's legacy price envelope. Each item is a flat object:
+
+```json
+{ "score": 9500, "chainId": "shufersal", "itemCode": "11210000094", "itemName": "רוטב טבסקו 60 מ\"ל", "...": "every other column" }
+```
+
+The keys are the camelCase form of the `public.products` columns. The API strips `runId`, `updatedAt`, `nameTokens`, and (defensively) `normalizedName`. `subchainId` and `storeId` stay. Values are database-native: `itemPrice` is the stored text, `sampleCount` is a number, timestamps are ISO strings. The API does not format money, convert units, or compute comparison prices — the consumer owns that mapping.
+
+Columns are discovered with `SELECT *` plus that one denylist, so a new non-internal scraper column appears without an API change. Name recall matches an exact `itemCode`, an exact normalized `itemName` (`lower(btrim(item_name))`), or a `nameTokens` overlap. Name matches must score above 2500. SKU matches are exact `itemCode` equality, score 10000, and leading zeros are significant.
 
 ## Render
 
