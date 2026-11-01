@@ -139,7 +139,7 @@ CREATE TABLE supermarket.schedule_claims (
 );
 
 INSERT INTO supermarket.chains(id, display_name, enabled) VALUES
-    ('shufersal', 'Shufersal', false), ('carrefour', 'Carrefour', false),
+    ('shufersal', 'Shufersal', true), ('carrefour', 'Carrefour', true),
     ('rami-levy', 'Rami Levy', true), ('yochananof', 'Yochananof', true),
     ('osher-ad', 'Osher Ad', true), ('victory', 'Victory', true),
     ('mahsanei-hashuk', 'Mahsanei HaShuk', true), ('hatzi-hinam', 'Hatzi Hinam', true),
