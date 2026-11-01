@@ -1,10 +1,17 @@
-import type { ChainId } from '../contracts/chains.ts';
-import { toProductResult, type CatalogProduct, type ProductResult } from './product-result.ts';
+import { toSearchResult, type SearchResult } from './row-result.ts';
 import { acceptsScore, scoreMatch } from './score.ts';
 
-export interface StoredProduct extends CatalogProduct {
-  normalizedName: string;
+/**
+ * A camelCase `public.products` row. Scoring fields are explicit; every other
+ * column is carried through untouched so schema additions need no API change.
+ */
+export interface StoredProduct {
+  chainId: string;
+  itemCode: string;
+  itemName: string | null;
+  manufactureName: string | null;
   nameTokens: string[];
+  [column: string]: unknown;
 }
 
 export interface SearchQuery {
@@ -21,21 +28,19 @@ export function rankProducts(
   products: readonly StoredProduct[],
   query: SearchQuery,
   limitPerChain: number,
-  now: Date,
-  staleAfterHours: number,
-): ProductResult[] {
+): SearchResult[] {
   const ranker = createRanker(limitPerChain);
   for (let index = 0; index < products.length; index += 200) {
     ranker.add(products.slice(index, index + 200), query);
   }
-  return ranker.finish(now, staleAfterHours);
+  return ranker.finish();
 }
 
 export function createRanker(limitPerChain: number): {
   add(products: readonly StoredProduct[], query: SearchQuery): void;
-  finish(now: Date, staleAfterHours: number): ProductResult[];
+  finish(): SearchResult[];
 } {
-  const byChain = new Map<ChainId, Scored[]>();
+  const byChain = new Map<string, Scored[]>();
   return {
     add(products, query) {
       for (const product of products) {
@@ -47,17 +52,17 @@ export function createRanker(limitPerChain: number): {
         byChain.set(product.chainId, current.slice(0, limitPerChain));
       }
     },
-    finish(now, staleAfterHours) {
+    finish() {
       const selected = [...byChain.values()].flat();
       selected.sort(compareGlobal);
-      return selected.map(({ product, score }) => toProductResult(product, score, now, staleAfterHours));
+      return selected.map(({ product, score }) => toSearchResult(product, score));
     },
   };
 }
 
 function scoreOf(product: StoredProduct, query: SearchQuery): number {
   if (query.queryType === 'sku') return product.itemCode === query.q ? 10000 : 0;
-  return scoreMatch(product.name, product.itemCode, product.manufacturer ?? '', query.q);
+  return scoreMatch(product.itemName ?? '', product.itemCode, product.manufactureName ?? '', query.q);
 }
 
 function compareWithinChain(left: Scored, right: Scored): number {

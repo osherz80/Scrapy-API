@@ -12,7 +12,7 @@ export function registerSearch(
   app: FastifyInstance,
   store: CatalogStore,
   logger: Logger,
-  options: { staleAfterHours: number; now: () => Date; rateLimit: RateLimiter },
+  options: { rateLimit: RateLimiter },
 ): void {
   app.get('/v1/search', async (request) => {
     take(options.rateLimit, 'search');
@@ -21,7 +21,7 @@ export function registerSearch(
     const parsed = parseSearchQuery({ queryType: query.queryType, q: query.q });
     const limitPerChain = parseLimitPerChain(query.limitPerChain);
     const started = Date.now();
-    const result = await guardDatabase(() => runSearch(store, parsed, limitPerChain, options.now(), options.staleAfterHours));
+    const result = await guardDatabase(() => runSearch(store, parsed, limitPerChain));
     request.observation.queryType = parsed.queryType;
     request.observation.resultCount = result.items.length;
     logger.info('search', {
@@ -49,7 +49,7 @@ export function registerSearch(
           : await reader.findNameCandidates(entry.q);
         rows.push({
           id: entry.id,
-          items: rankProducts(products, entry, limitPerChain, options.now(), options.staleAfterHours),
+          items: rankProducts(products, entry, limitPerChain),
           candidates: products.length,
         });
       }

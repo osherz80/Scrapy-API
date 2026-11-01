@@ -1,81 +1,99 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { fileURLToPath } from 'node:url';
 
-import { NAME_CANDIDATE_SQL } from '../../src/search/candidates.ts';
-import { matchesStoredCandidate } from '../../src/search/candidates.ts';
+import { matchesStoredCandidate, NAME_CANDIDATE_SQL, SKU_SQL } from '../../src/search/candidates.ts';
 import { createRanker, rankProducts, type StoredProduct } from '../../src/search/rank.ts';
-import { normalizeQuery, tokenize } from '../../src/search/score.ts';
+import { tokenize } from '../../src/search/score.ts';
 
-const NOW = new Date('2026-10-31T12:00:00.000Z');
-
-function product(overrides: Partial<StoredProduct> & Pick<StoredProduct, 'chainId' | 'itemCode' | 'name'>): StoredProduct {
-  const name = overrides.name;
+function product(overrides: Partial<StoredProduct> & Pick<StoredProduct, 'chainId' | 'itemCode'>): StoredProduct {
+  const itemName = overrides.itemName ?? null;
   return {
-    manufacturer: overrides.manufacturer ?? null,
-    price: '5.0000',
-    packageQuantity: null,
-    packageUnit: null,
-    sourceQuantity: null,
-    sourceUnitQty: null,
-    itemPriceUpdatedAt: null,
-    isWeighted: false,
-    sampleCount: 1,
-    sourceUpdatedAt: NOW,
-    updatedAt: NOW,
+    ...overrides,
+    itemName,
+    manufactureName: overrides.manufactureName ?? null,
+    nameTokens: overrides.nameTokens ?? tokenize(itemName ?? ''),
     chainId: overrides.chainId,
     itemCode: overrides.itemCode,
-    name,
-    normalizedName: overrides.normalizedName ?? normalizeQuery(name),
-    nameTokens: overrides.nameTokens ?? tokenize(name),
   };
 }
 
-test('name candidate SQL does not limit or use the manufacturer', () => {
+test('candidate SQL reads public.products with no legacy normalized name', () => {
+  for (const sql of [NAME_CANDIDATE_SQL, SKU_SQL]) {
+    assert.match(sql, /FROM public\.products/);
+    assert.equal(/supermarket\./.test(sql), false);
+    assert.equal(/normalized_name/.test(sql), false);
+  }
   assert.equal(/\bLIMIT\b/i.test(NAME_CANDIDATE_SQL), false);
-  assert.equal(/manufacturer/i.test(NAME_CANDIDATE_SQL.split('WHERE')[1] ?? ''), false);
-  assert.equal(matchesStoredCandidate({
-    itemCode: '1',
-    normalizedName: 'לחם',
-    nameTokens: tokenize('לחם'),
-  }, 'חלב'), false);
+  assert.match(NAME_CANDIDATE_SQL, /lower\(btrim\(item_name\)\) = \$2/);
+  assert.equal(/manufacture_name/i.test(NAME_CANDIDATE_SQL.split('WHERE')[1] ?? ''), false);
+});
+
+test('the JS recall rule mirrors the SQL', () => {
+  const candidate = {
+    itemCode: '11210000094',
+    itemName: 'רוטב טבסקו 60 מ"ל',
+    nameTokens: tokenize('רוטב טבסקו 60 מ"ל'),
+  };
+  assert.equal(matchesStoredCandidate(candidate, '11210000094'), true);
+  assert.equal(matchesStoredCandidate(candidate, '  רוטב טבסקו 60 מ"ל '), true);
+  assert.equal(matchesStoredCandidate(candidate, 'רוטב'), true);
+  assert.equal(matchesStoredCandidate(candidate, 'חלב'), false);
+  assert.equal(matchesStoredCandidate({ itemCode: '1', itemName: null, nameTokens: [] }, '!!!'), false);
+  assert.equal(matchesStoredCandidate({ itemCode: '1', itemName: '!!!', nameTokens: [] }, '!!!'), true);
 });
 
 test('chunked ranking matches a full pass and keeps the best item in a chain', () => {
   const rows = [
-    product({ chainId: 'shufersal', itemCode: 'aaa', name: 'לחם' }),
-    product({ chainId: 'shufersal', itemCode: 'zzz', name: 'חלב טרי' }),
-    product({ chainId: 'carrefour', itemCode: 'mmm', name: 'חלב' }),
-    product({ chainId: 'victory', itemCode: '1', name: 'גבינה', manufacturer: 'חלב' }),
+    product({ chainId: 'shufersal', itemCode: 'aaa', itemName: 'לחם' }),
+    product({ chainId: 'shufersal', itemCode: 'zzz', itemName: 'חלב טרי' }),
+    product({ chainId: 'carrefour', itemCode: 'mmm', itemName: 'חלב' }),
+    product({ chainId: 'victory', itemCode: '1', itemName: 'גבינה', manufactureName: 'חלב' }),
   ];
   const query = { queryType: 'name' as const, q: 'חלב' };
-  const once = rankProducts(rows, query, 1, NOW, 48);
+  const once = rankProducts(rows, query, 1);
   const ranker = createRanker(1);
   for (const row of rows) ranker.add([row], query);
-  const chunked = ranker.finish(NOW, 48);
-  assert.deepEqual(chunked.map((row) => [row.chain, row.ItemCode]), once.map((row) => [row.chain, row.ItemCode]));
-  assert.equal(once.find((row) => row.chain === 'shufersal')?.ItemCode, 'zzz');
-  assert.equal(once.some((row) => row.chain === 'victory'), false);
-  assert.deepEqual(once.map((row) => row.chain), ['carrefour', 'shufersal']);
+  const chunked = ranker.finish();
+  assert.deepEqual(chunked.map((row) => [row.chainId, row.itemCode]), once.map((row) => [row.chainId, row.itemCode]));
+  assert.equal(once.find((row) => row.chainId === 'shufersal')?.itemCode, 'zzz');
+  assert.equal(once.some((row) => row.chainId === 'victory'), false);
+  assert.deepEqual(once.map((row) => row.chainId), ['carrefour', 'shufersal']);
 });
 
 test('sku ranking is exact and keeps leading zeros', () => {
   const rows = [
-    product({ chainId: 'shufersal', itemCode: '0123', name: 'חלב' }),
-    product({ chainId: 'victory', itemCode: '0123', name: 'חלב אחר' }),
-    product({ chainId: 'carrefour', itemCode: '123', name: 'חלב' }),
+    product({ chainId: 'shufersal', itemCode: '0123', itemName: 'חלב' }),
+    product({ chainId: 'victory', itemCode: '0123', itemName: 'חלב אחר' }),
+    product({ chainId: 'carrefour', itemCode: '123', itemName: 'חלב' }),
   ];
-  const found = rankProducts(rows, { queryType: 'sku', q: '0123' }, 1, NOW, 48);
-  assert.deepEqual(found.map((row) => [row.chain, row.score]), [
+  const found = rankProducts(rows, { queryType: 'sku', q: '0123' }, 1);
+  assert.deepEqual(found.map((row) => [row.chainId, row.score]), [
     ['shufersal', 10000],
     ['victory', 10000],
   ]);
-  assert.equal(rankProducts(rows, { queryType: 'sku', q: '123' }, 1, NOW, 48)[0]?.ItemCode, '123');
+  assert.equal(rankProducts(rows, { queryType: 'sku', q: '123' }, 1)[0]?.itemCode, '123');
 });
 
-test('the catalog migration does not create database roles', () => {
-  const sql = readFileSync(fileURLToPath(new URL('../../db/migrations/001_catalog.sql', import.meta.url)), 'utf8');
-  assert.equal(/CREATE ROLE/i.test(sql), false);
-  assert.equal(/supermarket_search/i.test(sql), false);
+test('ranked rows are flat scored rows without internal columns', () => {
+  const rows = rankProducts(
+    [product({
+      chainId: 'shufersal',
+      itemCode: '0123',
+      itemName: 'חלב',
+      runId: '00000000-0000-4000-8000-000000000001',
+      updatedAt: '2026-10-31T06:00:00.000Z',
+      sampleCount: 2,
+    })],
+    { queryType: 'sku', q: '0123' },
+    1,
+  );
+  assert.equal(rows.length, 1);
+  const row = rows[0];
+  assert.equal(row?.score, 10000);
+  assert.equal(row?.itemCode, '0123');
+  assert.equal(row?.itemName, 'חלב');
+  assert.equal(row?.sampleCount, 2);
+  assert.equal(row !== undefined && 'runId' in row, false);
+  assert.equal(row !== undefined && 'updatedAt' in row, false);
+  assert.equal(row !== undefined && 'nameTokens' in row, false);
 });

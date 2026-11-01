@@ -17,12 +17,11 @@ npm test
 npm run test:integration
 npm run build
 npm start
-npm run db:migrate
 ```
 
-`npm run dev` and `npm start` listen on `0.0.0.0` and `PORT` (default 3000). Those commands, and `npm run db:migrate`, load a root `.env` when that file exists. A variable already set in the environment wins over the file. Tests do not load `.env`.
+`npm run dev` and `npm start` listen on `0.0.0.0` and `PORT` (default 3000). Both load a root `.env` when that file exists. A variable already set in the environment wins over the file. Tests do not load `.env`.
 
-`db:migrate` applies `db/migrations` to `DATABASE_URL` and records SHA-256 checksums in `supermarket.schema_migrations`. Do not point it at a database that Scrapy already migrated: a different checksum fails closed and does not rewrite data. Integration tests start a disposable PostgreSQL cluster under `Temp/pg-api` and delete it when they finish. They refuse any URL whose database name does not start with `supermarket_api_test`.
+This service owns no schema and has no migration command. It reads the scraper-owned `public.products` tables and never issues DDL. Integration tests apply a read-only copy of the scraper's migrations 001–005 from `test/fixtures/scraper-schema/` to a disposable PostgreSQL cluster under `Temp/pg-api`, and delete it when they finish. They refuse any URL whose database name does not start with `supermarket_api_test`.
 
 ## Configuration
 
@@ -57,9 +56,17 @@ There is no bearer token. `GET /openapi.json` lists the routes.
 
 Search is limited to 60 requests per minute and refresh triggers to 5 per minute, for the whole process. Over the limit is `429` with `Retry-After`. Error bodies use `{ "error": { "code", "message" }, "requestId" }`. The request id is also returned in `x-request-id`.
 
-## Field mapping
+## Search results
 
-Each result keeps Neuton's legacy price names and adds canonical fields. `ItemPrice` is the averaged price with four decimal places. `price` is that same value as a JSON number, with `currency` `ILS`. `Quantity` and `UnitQty` come from the stored observation. `UnitOfMeasure` and `UnitOfMeasurePrice` are comparison fields only (`100 g`, `100 ml`, or `1 unit`) and are empty when the package unit is missing. `PriceUpdateTime` is the item price-change time, or `""`. `sourceUpdatedAt` is catalog freshness. `isStale` is true only when that timestamp is strictly older than 48 hours. Name matches must score above 2500. SKU matches are exact `item_code` equality, score 10000, and leading zeros are significant.
+Since 2026-11-01 search returns raw rows, not Neuton's legacy price envelope. Each item is a flat object:
+
+```json
+{ "score": 9500, "chainId": "shufersal", "itemCode": "11210000094", "itemName": "רוטב טבסקו 60 מ\"ל", "...": "every other column" }
+```
+
+The keys are the camelCase form of the `public.products` columns. The API strips `runId`, `updatedAt`, `nameTokens`, and (defensively) `normalizedName`. `subchainId` and `storeId` stay. Values are database-native: `itemPrice` is the stored text, `sampleCount` is a number, timestamps are ISO strings. The API does not format money, convert units, or compute comparison prices — the consumer owns that mapping.
+
+Columns are discovered with `SELECT *` plus that one denylist, so a new non-internal scraper column appears without an API change. Name recall matches an exact `itemCode`, an exact normalized `itemName` (`lower(btrim(item_name))`), or a `nameTokens` overlap. Name matches must score above 2500. SKU matches are exact `itemCode` equality, score 10000, and leading zeros are significant.
 
 ## Render
 
