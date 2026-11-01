@@ -15,9 +15,16 @@ export function assertLocalTestDatabase(connectionString: string): void {
   }
 }
 
-export function createPool(connectionString: string, statementTimeoutMs: number): pg.Pool {
+export function createPool(connectionString: string, statementTimeoutMs: number, sslRootCert?: string): pg.Pool {
+  const url = new URL(connectionString);
+  if (!isLocalDatabase(connectionString)) {
+    // pg's URL SSL options replace the ssl object, so configure the CA and
+    // verification together in the URL rather than losing the CA to sslmode.
+    url.searchParams.set('sslmode', 'verify-full');
+    if (sslRootCert) url.searchParams.set('sslrootcert', sslRootCert);
+  }
   const pool = new Pool({
-    connectionString,
+    connectionString: url.toString(),
     max: 4,
     connectionTimeoutMillis: 5_000,
     statement_timeout: statementTimeoutMs,

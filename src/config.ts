@@ -8,6 +8,7 @@ export interface AppConfig {
   appVersion: string;
   staleAfterHours: number;
   databaseUrl: string;
+  databaseSslRootCert?: string;
   githubRepository: string;
   githubWorkflowId: string;
   githubRef: string;
@@ -92,6 +93,7 @@ export function loadConfig(env: Env): AppConfig {
     appVersion: optional(env, 'APP_VERSION', 'dev', invalid),
     staleAfterHours: readNumber(env, 'STALE_AFTER_HOURS', 48, 1, 24 * 14, invalid),
     databaseUrl: databaseUrl ?? '',
+    ...(present(env.DATABASE_SSLROOTCERT) ? { databaseSslRootCert: env.DATABASE_SSLROOTCERT } : {}),
     githubRepository: github.repository,
     githubWorkflowId: github.workflowId,
     githubRef: github.ref,

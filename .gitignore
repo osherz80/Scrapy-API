@@ -1,5 +1,7 @@
 # Local temporary files
 Temp/
+certs/*.crt
+certs/*.pem
 
 # Logs
 logs

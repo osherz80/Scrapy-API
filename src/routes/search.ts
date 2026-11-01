@@ -20,9 +20,9 @@ export function registerSearch(
     rejectUnknownQueryKeys(query, ['queryType', 'q', 'limitPerChain']);
     const parsed = parseSearchQuery({ queryType: query.queryType, q: query.q });
     const limitPerChain = parseLimitPerChain(query.limitPerChain);
+    request.observation.queryType = parsed.queryType;
     const started = Date.now();
     const result = await guardDatabase(() => runSearch(store, parsed, limitPerChain));
-    request.observation.queryType = parsed.queryType;
     request.observation.resultCount = result.items.length;
     logger.info('search', {
       requestId: request.id,
@@ -40,6 +40,7 @@ export function registerSearch(
     rejectUnknownQueryKeys(query, ['limitPerChain']);
     const limitPerChain = parseLimitPerChain(query.limitPerChain);
     const queries = parseBatch(request.body);
+    request.observation.queryType = 'batch';
     const started = Date.now();
     const results = await guardDatabase(() => store.withSnapshot(async (reader) => {
       const rows = [];
@@ -55,7 +56,6 @@ export function registerSearch(
       }
       return rows;
     }));
-    request.observation.queryType = 'batch';
     request.observation.resultCount = results.reduce((sum, row) => sum + row.items.length, 0);
     logger.info('search', {
       requestId: request.id,

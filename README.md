@@ -27,6 +27,12 @@ This service owns no schema and has no migration command. It reads the scraper-o
 
 Copy `.env.example` only as a name checklist. The only value required to boot is `DATABASE_URL`. This version has no `SEARCH_API_KEY`, no `ADMIN_API_KEY`, and no separate database roles. A non-local database URL must not use `sslmode=disable`.
 
+If the database uses a CA outside Node's default trust store, provision its CA certificate and set `DATABASE_SSLROOTCERT=certs/supabase-ca.crt` in `.env`. Use the same certificate as the scraper. Relative paths resolve from the process working directory; absolute paths also work. The API enforces certificate and hostname verification for remote databases, including when the URL contains `sslmode=require`. It also supports a URL `sslrootcert` when the environment setting is absent. Certificate files under `certs/` are ignored by Git.
+
+For Render, upload the CA as a secret file (for example `supabase-ca.crt`) and set `DATABASE_SSLROOTCERT=/etc/secrets/supabase-ca.crt`, then redeploy with the updated API. Keep the existing `DATABASE_URL`. A local certificate file is not automatically available on Render.
+
+Connection and query failures log `phase` and `databaseCode` without driver messages, credentials, or query text. `SELF_SIGNED_CERT_IN_CHAIN` means the database CA needs configuring. `/health/ready` checks connectivity; `/health/live` only checks that the process is running.
+
 `POST /v1/refreshes` is implemented. It admits a run only when all four GitHub settings below are present, then asks GitHub to dispatch a workflow. The scraper does not yet have a manual-run path, so a successful dispatch does not finish ingestion. Without those settings the route returns `503 DISPATCH_UNAVAILABLE` and does not create a run.
 
 These four are required together only for dispatch:
@@ -55,6 +61,12 @@ There is no bearer token. `GET /openapi.json` lists the routes.
 | GET | `/v1/chains` | Product count, publication time, source watermark, stale flag, active run. |
 
 Search is limited to 60 requests per minute and refresh triggers to 5 per minute, for the whole process. Over the limit is `429` with `Retry-After`. Error bodies use `{ "error": { "code", "message" }, "requestId" }`. The request id is also returned in `x-request-id`.
+
+URL-encode Hebrew search text when using curl from Windows. For example, this searches for `חלב` without depending on the terminal's text encoding:
+
+```powershell
+curl.exe "http://localhost:3000/v1/search?queryType=name&q=%D7%97%D7%9C%D7%91&limitPerChain=3"
+```
 
 ## Search results
 

@@ -9,6 +9,12 @@ function baseEnv(): Record<string, string> {
   };
 }
 
+test('loadConfig accepts a database CA certificate path', () => {
+  const config = loadConfig({ ...baseEnv(), DATABASE_SSLROOTCERT: 'certs/database.crt' });
+  assert.equal(config.databaseSslRootCert, 'certs/database.crt');
+  assert.equal(loadConfig(baseEnv()).databaseSslRootCert, undefined);
+});
+
 test('loadConfig applies the spec defaults from DATABASE_URL alone', () => {
   const config = loadConfig(baseEnv());
   assert.equal(config.port, 3000);

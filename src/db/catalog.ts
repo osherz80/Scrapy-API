@@ -27,20 +27,26 @@ export class PgCatalog implements CatalogStore {
   }
 
   async withSnapshot<T>(fn: (reader: CatalogReader) => Promise<T>): Promise<T> {
-    const client = await this.pool.connect();
+    let client: pg.PoolClient | undefined;
     const started = Date.now();
     try {
+      client = await this.pool.connect();
       await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ');
       const result = await fn(new PgReader(client));
       await client.query('COMMIT');
       return result;
     } catch (error) {
-      await client.query('ROLLBACK').catch(() => undefined);
-      this.logger.error(new Error('Database query failed'), { databaseMs: Date.now() - started });
+      await client?.query('ROLLBACK').catch(() => undefined);
+      const code = error !== null && typeof error === 'object' && 'code' in error ? error.code : undefined;
+      this.logger.error('Database operation failed', {
+        phase: client ? 'query' : 'connect',
+        databaseCode: typeof code === 'string' && /^[A-Z0-9_]{1,64}$/.test(code) ? code : 'UNKNOWN',
+        databaseMs: Date.now() - started,
+      });
       if (error instanceof HttpError) throw error;
       throw new HttpError(503, 'UNAVAILABLE', 'Database unavailable', undefined, 5);
     } finally {
-      client.release();
+      client?.release();
     }
   }
 }
